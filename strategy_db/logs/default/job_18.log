@@ -1,0 +1,17 @@
+[orchestrator] === phase: strategy ===
+[orchestrator] agent strategy-writer ...
+Traceback (most recent call last):
+  File "G:\Claude\pyscriptopenalgo\.claude\orchestrator.py", line 339, in <module>
+    main()
+    ~~~~^^
+  File "G:\Claude\pyscriptopenalgo\.claude\orchestrator.py", line 333, in main
+    PHASE_FN[ph](st, a)
+    ~~~~~~~~~~~~^^^^^^^
+  File "G:\Claude\pyscriptopenalgo\.claude\orchestrator.py", line 187, in phase_strategy
+    res = agent_with_input(st, "strategy-writer", f"Mode: write. File: strategies/{a.strategy}.py\nSpec:\n{spec}")
+  File "G:\Claude\pyscriptopenalgo\.claude\orchestrator.py", line 166, in agent_with_input
+    res = run_agent(name, prompt + (f"\n\nUser answers so far: {json.dumps(st['answers'][-3:])}" if st["answers"] else ""))
+  File "G:\Claude\pyscriptopenalgo\.claude\orchestrator.py", line 160, in run_agent
+    raise RuntimeError(f"agent {name} failed (exit {r.returncode}). Tail:\n{out[-800:]}")
+RuntimeError: agent strategy-writer failed (exit 1). Tail:
+You've hit your session limit · resets 3:10pm (Asia/Calcutta)

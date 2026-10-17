@@ -1,0 +1,24 @@
+{
+  "name": "9/21 EMA Crossover Scalp",
+  "aliases": ["EMA 9 21 Cross", "Fast/Slow EMA Scalping"],
+  "family": "ma_cross",
+  "timeframe": "5m",
+  "indicators": ["ema9", "ema21"],
+  "entry_trigger": "ema_cross",
+  "exit_type": "fixed_rr",
+  "entry_long": "Go long when the 9-period EMA crosses above the 21-period EMA on a 5-minute candle close, price is trading above both EMAs, and the EMAs are visibly separating (steep angle) after the cross rather than flat/overlapping.",
+  "entry_short": "Go short when the 9-period EMA crosses below the 21-period EMA on a 5-minute candle close with price below both EMAs and the EMAs separating.",
+  "exit": "Exit at target or stop; alternatively exit when the 9 EMA begins flattening against the trade direction, or trail the stop using the 9 EMA.",
+  "stop": "Stop just beyond the low (for longs) or high (for shorts) of the crossover candle, or beyond the most recent swing low/high.",
+  "target": "Fixed reward:risk of 2:1 from entry versus the initial stop distance.",
+  "filters": "Avoid sideways/range-bound markets; the strategy performs best when a higher-timeframe trend filter (e.g. 15-minute trend direction) agrees with the crossover direction.",
+  "params": {"fast_ema": 9, "slow_ema": 21, "reward_risk": 2},
+  "popularity": 5,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "sources": [
+    {"url": "https://www.sahi.com/blogs/ema-scalping-strategy-the-9-21-crossover-setup-for-nifty-and-bank-nifty", "title": "9/21 EMA Scalping Strategy: Nifty & Bank Nifty Setup", "type": "broker_education"},
+    {"url": "https://fxnx.com/en/blog/ema-crossover-scalping-fast-trading-playbook", "title": "EMA Crossover Scalping: The 9/21 Fast Trading Setup", "type": "blog"},
+    {"url": "https://www.dominionmarkets.com/9-21-exponential-moving-average/", "title": "9 and 21 EMA Crossover Strategy for Better Entries", "type": "blog"}
+  ]
+}

@@ -1,0 +1,11 @@
+2026-10-07 09:00:00 | Strategy InsideBarBreakoutScalp starting on NIFTY
+2026-10-07 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-10-07 12:10:00 | Inside bar at bar 34 (12:05) inside mother bar 33 (high 22717.65 / low 22686.00); watching for breakout
+2026-10-07 12:15:00 | Bearish breakdown: bar 35 closed 22674.75 < mother low 22686.00 (inside bars seen: 1)
+2026-10-07 12:15:00 | ATM PE NIFTY19OCT2622650PE | lot 65 | expiry 19OCT26 | underlying_ltp 22674.75
+2026-10-07 12:15:01 | BUY NIFTY19OCT2622650PE qty 65 @ 184.8 | order SIM00001 | PE inside-bar breakout | index 22674.75 stop 22728.99 target 22578.25
+2026-10-07 12:15:01 | ENTER PE | index 22674.75 stop 22728.99 (0.24%) target 22578.25 (R:R 2.0) | trade 1/4
+2026-10-07 13:10:02 | SELL NIFTY19OCT2622650PE qty 65 @ 247.95 | order SIM00002 | target hit (index 22565.65 <= 22578.25)
+2026-10-07 13:10:02 | EXIT PE target hit (index 22565.65 <= 22578.25) | qty 65 @ 247.95 | pnl +4105 | day P&L +4105
+2026-10-07 15:15:02 | Square-off time reached; stopping for the day
+2026-10-07 15:15:02 | Done for the day. Trades 1 | day P&L +4105

@@ -1,0 +1,20 @@
+{
+ "date": "2026-10-16",
+ "trades": 6,
+ "cycles_with_trades": 1,
+ "reversals": 5,
+ "gross_pnl": -2268.5,
+ "net_pnl": -2268.5,
+ "win_rate": 0.167,
+ "avg_win": 2668.25,
+ "avg_loss": -987.35,
+ "max_drawdown": 4936.75,
+ "pnl_per_cycle": {
+  "0": -2268.5
+ },
+ "stop_reasons": {
+  "Supertrend flip to down": 3,
+  "Supertrend flip to up": 3
+ },
+ "unclosed_positions": []
+}

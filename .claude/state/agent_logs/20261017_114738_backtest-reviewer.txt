@@ -1,0 +1,12 @@
+PROMPT:
+Reply status pass with empty findings and questions (test only, do no work).
+
+IMPORTANT: your final message MUST end with the JSON result object described in your instructions.
+
+EXIT 0
+
+OUTPUT:
+status pass
+
+
+STDERR:

@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategy Lab</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2230; --mute:#667085; --line:#e3e6ec; --acc:#2457d6; --pos:#0b7a46; --neg:#c0262d;
+          --warn:#b25e00; --chip:#eef1f6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12151c; --card:#1a1f2a; --ink:#e7eaf1; --mute:#98a1b3; --line:#2a3141;
+          --acc:#6b95ff; --pos:#3ecf8e; --neg:#ff6b72; --warn:#f0a040; --chip:#252c3a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:14px/1.45 system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:10px 16px; background:var(--card); border-bottom:1px solid var(--line); position:sticky; top:0; z-index:5; }
+  h1 { font-size:16px; margin:0 12px 0 0; }
+  main { padding:16px; max-width:1300px; margin:0 auto; }
+  button, select, input { font:inherit; color:inherit; background:var(--card); border:1px solid var(--line); border-radius:6px; padding:5px 10px; }
+  button { cursor:pointer; } button:hover { border-color:var(--acc); } button:disabled { opacity:.5; cursor:default; }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  button.danger { color:var(--neg); }
+  nav { display:flex; gap:4px; margin-bottom:12px; flex-wrap:wrap; }
+  nav button { border-radius:6px; } nav button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:12px; overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; } th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-weight:600; color:var(--mute); font-size:12px; white-space:nowrap; } tr.click:hover { background:var(--chip); cursor:pointer; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; } .pos { color:var(--pos); } .neg { color:var(--neg); } .mute { color:var(--mute); }
+  .badge { display:inline-block; padding:1px 8px; border-radius:10px; background:var(--chip); font-size:12px; white-space:nowrap; }
+  .badge.in_progress, .badge.running { background:#2457d622; color:var(--acc); }
+  .badge.tested, .badge.ok { background:#0b7a4622; color:var(--pos); }
+  .badge.waiting { background:#b25e0022; color:var(--warn); }
+  .badge.failed { background:#c0262d22; color:var(--neg); }
+  .badge.needs_review, .badge.needs_input { background:#b25e0022; color:var(--warn); }
+  .badge.untestable, .badge.cancelled, .badge.archived { color:var(--mute); }
+  .spin { display:inline-block; width:10px; height:10px; border:2px solid var(--acc); border-right-color:transparent; border-radius:50%; animation:sp 0.9s linear infinite; margin-right:4px; vertical-align:-1px; }
+  @keyframes sp { to { transform:rotate(360deg); } }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .banner { background:#b25e0022; border:1px solid var(--warn); color:var(--warn); padding:8px 12px; border-radius:8px; margin-bottom:12px; }
+  .modal { position:fixed; inset:0; background:#0007; display:flex; align-items:flex-start; justify-content:center; padding:30px 12px; overflow:auto; z-index:20; }
+  .modal[hidden] { display:none; }
+  .modal > div { background:var(--card); border-radius:10px; padding:16px; max-width:900px; width:100%; }
+  pre { background:var(--chip); padding:8px; border-radius:6px; overflow:auto; max-height:280px; white-space:pre-wrap; word-break:break-word; margin:6px 0; }
+  .kv { display:grid; grid-template-columns:140px 1fr; gap:4px 10px; } .kv div:nth-child(odd) { color:var(--mute); }
+  .chip { display:inline-block; margin:3px 4px 0 0; padding:0 8px; border-radius:10px; background:var(--chip); font-size:11px; color:var(--mute); cursor:pointer; }
+  .chip:hover { color:var(--acc); }
+  .chip.on, .tagbtn.on { background:var(--acc); color:#fff; border-color:var(--acc); }
+  textarea { width:100%; font:12px/1.45 ui-monospace, Consolas, "Cascadia Mono", monospace; background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:6px; padding:8px; tab-size:4; resize:vertical; }
+  textarea.rule { font:13px/1.4 system-ui, "Segoe UI", sans-serif; }
+  .field { margin-bottom:10px; } .field > label { display:block; color:var(--mute); font-size:12px; margin-bottom:2px; }
+  .ok { color:var(--pos); }
+  .small { font-size:12px; } label { display:inline-flex; gap:5px; align-items:center; }
+  @media (max-width:640px) { main { padding:10px; } .kv { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Strategy Lab</h1>
+  <label class="small">Workspace <select id="ws"></select></label>
+  <button id="addws" class="small">+ workspace</button>
+  <button id="rescan" class="small" title="Re-read the strategies and result folders of this workspace into the app (picks up command-line runs)">↻ Rescan folders</button>
+  <span style="flex:1"></span>
+  <button id="seed" class="primary" title="One-time seed run: research 10 unique strategies">Research: seed 10</button>
+  <button id="daily" class="primary" title="Look for 1 new unique strategy">Research: find 1 new</button>
+  <span id="usage" class="small mute" title="Claude calls in the last hour / last 24 h (budget in the Jobs tab)"></span>
+  <label title="Test the next queued strategy automatically, one at a time"><input type="checkbox" id="auto"> Auto-run queue</label>
+</header>
+<main>
+  <div id="banner"></div>
+  <nav id="tabs"></nav>
+  <div id="view"></div>
+</main>
+<div id="modal" class="modal" hidden><div id="modalbody"></div></div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const st = { backup: null, importReport: null, tab: "strategies", data: null, filter: { status: "", tag: "", archived: false, q: "" }, resultsMode: "date", dataList: null, results: null, page: null };
+
+function h(tag, attrs, ...kids) {                       // safe DOM builder: text only, never innerHTML
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (v !== false && v != null) e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return e;
+}
+async function api(path, body) {
+  const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "strategy-lab" }, body: JSON.stringify(body) };
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+const act = async (fn) => { try { await fn(); } catch (e) { alert(e.message); } refresh(); };
+const money = (v) => v == null ? "–" : h("span", { class: v > 0 ? "pos" : v < 0 ? "neg" : "" }, (v > 0 ? "+" : "") + Math.round(v));
+const badge = (s, spin) => h("span", { class: "badge " + s }, spin ? h("span", { class: "spin" }) : null, s.replace("_", " "));
+const dt = (s) => s ? s.replace("T", " ").slice(5, 16) : "";
+
+// ---------- header ----------
+function renderHeader() {
+  const d = st.data;
+  const sel = $("#ws"); sel.replaceChildren(...Object.keys(d.workspaces).map(n => h("option", { value: n, selected: n === d.workspace }, n)));
+  $("#auto").checked = d.auto_run;
+  const u = d.usage; $("#usage").textContent = `Claude: ${u.hour}/${u.settings.claude_max_per_hour} per hour · ${u.day}/${u.settings.claude_max_per_day} today`;
+  const rr = d.jobs.some(j => j.kind === "research" && j.status === "running");
+  $("#seed").disabled = $("#daily").disabled = rr;
+  $("#seed").textContent = rr ? "Researcher running…" : "Research: seed 10";
+  $("#banner").replaceChildren(d.key_present ? "" : h("div", { class: "banner" }, "OPENALGO_API_KEY not found (environment or .env). Data fetch and backtests cannot run."),
+    d.paused_until ? h("div", { class: "banner" }, "Claude usage limit reached. Agent jobs (research, strategy writing, review) are paused until about " + d.paused_until.replace("T", " ") + ". Queued strategies keep their place.") : "");
+}
+$("#ws").onchange = (e) => act(() => api("/api/workspaces/activate", { name: e.target.value }));
+$("#rescan").onclick = () => act(async () => { const r = await api("/api/sync", {}); alert(`Rescan done: ${r.registered} strategies registered, ${r.runs_imported} results imported.`); });
+$("#addws").onclick = () => { const n = prompt("New workspace name (letters, digits, _ -). It gets its own database file and candle-cache folder:"); if (n) act(() => api("/api/workspaces", { name: n, activate: confirm("Switch to it now?") })); };
+$("#seed").onclick = () => confirm("Research 10 unique strategies (one-time seed)? This uses Claude web searches and may take several minutes.") && act(() => api("/api/research", { mode: "seed" }));
+$("#daily").onclick = () => act(() => api("/api/research", { mode: "daily" }));
+$("#auto").onchange = (e) => act(() => api("/api/auto", { on: e.target.checked }));
+
+const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["jobs", "Jobs"], ["backup", "Backup"]];
+function renderTabs() {
+  $("#tabs").replaceChildren(...TABS.map(([k, l]) => h("button", { class: st.tab === k ? "on" : "", onclick: () => { st.tab = k; refresh(); } }, l)));
+}
+
+// ---------- strategies ----------
+function strategiesView() {
+  const d = st.data, f = st.filter;
+  const statuses = ["", "queued", "in_progress", "waiting", "tested", "failed", "needs_review", "untestable"];
+  const list = d.strategies.filter(s => (f.archived ? !!s.archived_at : !s.archived_at) && (!f.status || s.status === f.status) && (!f.tag || s.tags.includes(f.tag)) &&
+    (!f.q || (s.name + " " + s.family + " " + s.aliases.join(" ") + " " + s.tags.join(" ")).toLowerCase().includes(f.q.toLowerCase())));
+  const tagCounts = {}; d.strategies.filter(s => !s.archived_at).forEach(s => s.tags.forEach(t => tagCounts[t] = (tagCounts[t] || 0) + 1));
+  const ctl = h("div", { class: "row", style: "margin-bottom:10px" },
+    h("select", { onchange: (e) => { f.status = e.target.value; render(); } }, statuses.map(s => h("option", { value: s, selected: s === f.status }, s || "all statuses"))),
+    h("select", { onchange: (e) => { f.tag = e.target.value; render(); } }, h("option", { value: "" }, "all tags"), Object.keys(tagCounts).sort().map(t => h("option", { value: t, selected: t === f.tag }, `${t} (${tagCounts[t]})`))),
+    h("label", {}, h("input", { type: "checkbox", checked: f.archived, onchange: (e) => { f.archived = e.target.checked; render(); } }), "archived"),
+    h("input", { placeholder: "search…", value: f.q, oninput: (e) => { f.q = e.target.value; clearTimeout(st.qt); st.qt = setTimeout(render, 250); }, id: "q" }),
+    h("span", { class: "mute small" }, `${list.length} shown · queue: ${d.strategies.filter(s => s.status === "queued" && !s.archived_at).length} waiting`));
+  const rows = list.map(s => {
+    const running = s.status === "in_progress";
+    const inst = h("select", { class: "small", id: "inst" + s.id }, d.instruments.map(i => h("option", { value: i }, i)));
+    const date = h("input", { type: "date", class: "small", id: "date" + s.id, title: "empty = previous trading day" });
+    return h("tr", {},
+      h("td", { class: "num mute" }, s.queue_pos || ""),
+      h("td", {}, h("a", { href: "#/strategy/" + s.id, style: "color:inherit;font-weight:600" }, s.name), h("div", { class: "mute small" }, s.family + " · " + s.origin + (s.pinned ? " · pinned" : "") + (s.code_edited_at ? " · edited" : "")),
+        h("div", {}, s.tags.map(t => h("span", { class: "chip", onclick: () => { st.filter.tag = t; render(); } }, t)))),
+      h("td", {}, badge(s.archived_at ? "archived" : s.status, running), running ? h("div", { class: "small mute" }, (s.phase || "") + " " + (s.status_note || "")) : (s.status_note ? h("div", { class: "small mute" }, s.status_note) : null)),
+      h("td", { class: "small" }, s.testable + (s.testable_reason ? " – " + s.testable_reason.slice(0, 60) : "")),
+      h("td", {}, s.stats ? Object.entries(s.stats).map(([ins, x]) => h("div", { class: "small" }, h("b", {}, ins + " "), `${x.days}d · total `, money(x.total), " · avg ", money(x.avg), x.low_sample ? h("span", { class: "mute" }, " · low sample") : null, x.far_days ? h("span", { class: "mute", title: "days where the cached contract was not the nearest expiry; not in the numbers above" }, ` · +${x.far_days} far-expiry day(s) ${x.far_total >= 0 ? "+" : ""}${Math.round(x.far_total)}`) : null)) : h("span", { class: "mute" }, "–")),
+      h("td", {}, h("div", { class: "row" }, inst, date,
+        h("button", { disabled: running || s.testable === "no", onclick: () => act(() => api(`/api/strategies/${s.id}/run`, { instrument: $("#inst" + s.id).value, date: $("#date" + s.id).value })) }, "Run"),
+        h("button", { onclick: () => act(() => api(`/api/strategies/${s.id}/pin`, {})) }, s.pinned ? "Unpin" : "Pin"),
+        (s.status === "failed" || s.status === "needs_review" || s.status === "waiting") ? h("button", { onclick: () => act(() => api(`/api/strategies/${s.id}/requeue`, {})) }, "Re-queue") : null,
+        h("button", { onclick: () => act(() => api(`/api/strategies/${s.id}/archive`, { on: !s.archived_at })) }, s.archived_at ? "Unarchive" : "Archive"),
+        h("button", { class: "danger", onclick: () => deleteStrategy(s) }, "Delete"))));
+  });
+  return h("div", {}, ctl, h("div", { class: "card" }, h("table", {},
+    h("thead", {}, h("tr", {}, ["#", "Strategy", "Status", "Testable", "Performance (gross, latest run per day)", "Actions"].map(t => h("th", {}, t)))),
+    h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 6, class: "mute" }, "No strategies yet. Click “Research: seed 10”."))))),
+    researchLog());
+}
+function researchLog() {
+  const l = st.data.research_log;
+  if (!l.length) return null;
+  return h("div", { class: "card" }, h("b", {}, "Researcher activity"), h("table", {}, h("tbody", {}, l.map(r => h("tr", {}, h("td", { class: "mute small" }, dt(r.ts)), h("td", {}, badge(r.action === "added" ? "ok" : r.action)), h("td", {}, r.detail))))));
+}
+function deleteStrategy(s) {
+  const t = prompt(`Delete “${s.name}” and all its runs from the database?\nThe strategy won't be re-added by the researcher. Strategy .py files are never deleted.\n\nType DELETE to confirm:`);
+  if (t !== "DELETE") return;
+  act(() => api(`/api/strategies/${s.id}/delete`, { confirm: "DELETE", delete_files: confirm("Also delete the saved backtest result folders for its runs?") }));
+}
+
+async function openStrategy(id) {
+  const d = await api("/api/strategies/" + id);
+  const spec = d.spec || {};
+  const keys = ["family", "timeframe", "indicators", "entry_trigger", "exit_type", "entry_long", "entry_short", "exit", "stop", "target", "filters", "params", "data_needs", "testable_reason", "notes"];
+  const kv = h("div", { class: "kv" }, keys.filter(k => spec[k] != null && spec[k] !== "").flatMap(k => [h("div", {}, k), h("div", {}, typeof spec[k] === "object" ? JSON.stringify(spec[k]) : String(spec[k]))]));
+  const srcs = (d.sources || []).map(s => h("div", { class: "small" }, /^https?:\/\//i.test(s.url || "") ? h("a", { href: s.url, target: "_blank", rel: "noopener noreferrer" }, s.title || s.url) : (s.title || "source"), h("span", { class: "mute" }, " · " + (s.type || ""))));
+  const runs = h("table", {}, h("thead", {}, h("tr", {}, ["Date", "Instrument", "Trades", "P&L", "Win rate", "Max DD", "Review", ""].map(t => h("th", {}, t)))),
+    h("tbody", {}, d.runs.map(r => h("tr", { class: "click", onclick: () => openRun(r.id) }, h("td", {}, r.day), h("td", {}, r.instrument), h("td", {}, r.trades), h("td", {}, money(r.gross_pnl)),
+      h("td", {}, r.win_rate == null ? "–" : Math.round(r.win_rate * 100) + "%"), h("td", {}, r.max_dd == null ? "–" : Math.round(r.max_dd)), h("td", {}, r.verdict || ""),
+      h("td", {}, h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); if (confirm("Delete this run?")) act(async () => { await api(`/api/runs/${r.id}/delete`, { delete_files: false }); closeModal(); }); } }, "×"))))));
+  showModal(h("div", {}, h("div", { class: "row" }, h("h3", { style: "margin:0" }, d.name), badge(d.status), h("span", { style: "flex:1" }), h("button", { onclick: closeModal }, "Close")),
+    d.aliases && d.aliases.length ? h("div", { class: "mute small" }, "Also known as: " + d.aliases.join(", ")) : null,
+    h("h4", {}, "Rules"), kv, h("h4", {}, "Sources"), srcs.length ? srcs : h("div", { class: "mute small" }, "none"),
+    h("h4", {}, "Runs"), d.runs.length ? runs : h("div", { class: "mute small" }, "No runs yet."),
+    h("h4", {}, "Jobs"), h("div", { class: "small" }, d.jobs.map(j => h("div", {}, `#${j.id} ${j.label} – ${j.status} ${j.phase || ""} ${dt(j.started)}`)))));
+}
+async function openRun(id) {
+  const r = await api("/api/runs/" + id);
+  const t = r.trade_rows.length ? h("table", {}, h("thead", {}, h("tr", {}, ["Cycle", "Symbol", "Qty", "Entry", "Exit", "P&L"].map(x => h("th", {}, x)))),
+    h("tbody", {}, r.trade_rows.map(x => h("tr", {}, h("td", {}, x.cycle), h("td", {}, x.symbol), h("td", {}, x.qty), h("td", {}, `${x.entry_time} @ ${x.entry_price}`), h("td", {}, `${x.exit_time} @ ${x.exit_price}`), h("td", {}, money(+x.gross_pnl)))))) : h("div", { class: "mute" }, "No trades.");
+  showModal(h("div", {}, h("div", { class: "row" }, h("h3", { style: "margin:0" }, `Run ${r.day} · ${r.instrument}`), h("span", { style: "flex:1" }), h("button", { onclick: closeModal }, "Close")),
+    r.summary ? h("pre", {}, JSON.stringify(r.summary, null, 1)) : null, t, h("h4", {}, "Log (tail)"), h("pre", {}, r.log_tail || "no log")));
+}
+function showModal(node) { $("#modalbody").replaceChildren(node); $("#modal").hidden = false; }
+function closeModal() { $("#modal").hidden = true; }
+$("#modal").onclick = (e) => { if (e.target.id === "modal") closeModal(); };
+
+// ---------- results ----------
+function resultsView() {
+  const mode = h("div", { class: "row", style: "margin-bottom:10px" },
+    ["date", "strategy"].map(m => h("button", { class: st.resultsMode === m ? "on primary" : "", onclick: () => { st.resultsMode = m; render(); } }, "By " + m)));
+  if (!st.results) return h("div", {}, mode, "Loading…");
+  const runs = st.results.runs.filter(r => !r.archived_at);
+  const groups = {};
+  runs.forEach(r => { const k = st.resultsMode === "date" ? r.day : r.name; (groups[k] = groups[k] || []).push(r); });
+  const keys = Object.keys(groups).sort((a, b) => st.resultsMode === "date" ? b.localeCompare(a) : a.localeCompare(b));
+  const cards = keys.map(k => {
+    const g = groups[k], total = g.reduce((a, r) => a + (r.gross_pnl || 0), 0);
+    return h("div", { class: "card" }, h("div", { class: "row" }, h("b", {}, k), h("span", { class: "mute small" }, `${g.length} run(s) · total `), money(total)),
+      h("table", {}, h("thead", {}, h("tr", {}, [st.resultsMode === "date" ? "Strategy" : "Date", "Instrument", "Trades", "P&L", "Win rate", "Review"].map(t => h("th", {}, t)))),
+        h("tbody", {}, g.map(r => h("tr", { class: "click", onclick: () => openRun(r.id) }, h("td", {}, st.resultsMode === "date" ? r.name : r.day), h("td", {}, r.instrument), h("td", {}, r.trades), h("td", {}, money(r.gross_pnl)),
+          h("td", {}, r.win_rate == null ? "–" : Math.round(r.win_rate * 100) + "%"), h("td", {}, r.verdict || ""))))));
+  });
+  return h("div", {}, mode, h("div", { class: "mute small", style: "margin-bottom:8px" }, "P&L is gross, without slippage or charges. Few days = low sample; do not read a ranking into it."), cards.length ? cards : h("div", { class: "card mute" }, "No results yet."));
+}
+
+// ---------- data ----------
+function dataView() {
+  const d = st.dataList;
+  const f = h("div", { class: "row" }, h("select", { id: "finst" }, [...st.data.instruments, "ALL"].map(i => h("option", { value: i }, i))), h("input", { type: "date", id: "fdate", title: "empty = previous trading day" }),
+    h("button", { class: "primary", onclick: () => act(() => api("/api/data/fetch", { instrument: $("#finst").value, date: $("#fdate").value })) }, "Fetch data from OpenAlgo"),
+    h("button", { title: "Fetch every day since the nearest contract was listed (one call per series, a few minutes). Run while the contract is still listed.", onclick: () => confirm("Backfill the whole listed life of the nearest contract? It makes about 60-100 API calls (a few minutes).") && act(() => api("/api/data/backfill", { instrument: $("#finst").value })) }, "Backfill all days of the nearest contract"));
+  if (!d) return h("div", {}, f, "Loading…");
+  return h("div", {}, h("div", { class: "card" }, h("b", {}, "Fetch candles"), h("div", { class: "mute small" }, "Cache folder: " + d.cache_dir), f),
+    h("div", { class: "card" }, h("b", {}, "Cached days"), h("div", { class: "banner small", style: "margin-top:8px" }, "Deleting a day removes its candles. Expired option contracts cannot be fetched again from OpenAlgo, so that day may be gone for good."),
+      h("table", {}, h("thead", {}, h("tr", {}, ["Date", "Instrument", "Expiry", "Expiry label", "Series", "Size", "Complete", ""].map(t => h("th", {}, t)))),
+        h("tbody", {}, d.items.length ? d.items.map(i => h("tr", {}, h("td", {}, i.date), h("td", {}, i.instrument), h("td", {}, i.expiry || "–"), h("td", { class: "small" }, i.nearest ? "nearest" : h("span", { class: "warn", title: "the cached contract was not the nearest expiry that day; multi-day runs skip it unless you tick the far-expiry option" }, "far expiry"), i.dte != null ? ` · ${i.dte}d` : "", i.backfilled ? " · backfilled" : ""), h("td", {}, i.series), h("td", {}, i.size_kb + " KB"),
+          h("td", {}, badge(i.complete ? "ok" : "failed"), i.issues.length ? h("div", { class: "small mute" }, i.issues[0]) : null),
+          h("td", {}, h("button", { class: "danger", onclick: () => confirm(`Delete cached candles for ${i.instrument} ${i.date}?`) && act(() => api("/api/data/delete", { instrument: i.instrument, date: i.date })) }, "Delete")))) : h("tr", {}, h("td", { colspan: 7, class: "mute" }, "Nothing cached."))))));
+}
+
+// ---------- jobs ----------
+function usageCard() {
+  const u = st.data.usage, c = u.settings;
+  const num = (id, v, step) => h("input", { id, type: "number", min: 0, step: step || 1, value: v, style: "width:80px" });
+  const f = { h: num("bh", c.claude_max_per_hour), d: num("bd", c.claude_max_per_day), g: num("bg", c.claude_min_gap_sec), c: num("bc", c.claude_max_cost_day, 0.5) };
+  const ai = h("input", { type: "checkbox", id: "bai", checked: st.data.llm_review });
+  const save = () => act(() => api("/api/settings/claude", { max_per_hour: +f.h.value, max_per_day: +f.d.value, min_gap_sec: +f.g.value, max_cost_day: +f.c.value, llm_review: ai.checked }));
+  return h("div", { class: "card" }, h("b", {}, "Claude usage and budget"),
+    h("div", { class: "small", style: "margin:6px 0" }, `Last hour: ${u.hour} · last 24 h: ${u.day} · tokens in/out (24 h): ${u.tokens_day.input.toLocaleString()} / ${u.tokens_day.output.toLocaleString()} · cost (24 h, as reported by the CLI): $${u.cost_day}`,
+      u.has_capacity ? "" : h("span", { class: "neg" }, ` · budget used: next call in ~${Math.ceil(u.wait_seconds / 60)} min (${u.reason})`)),
+    h("div", { class: "row small" }, h("label", {}, "max calls/hour", f.h), h("label", {}, "max calls/day", f.d), h("label", {}, "min gap (s)", f.g), h("label", {}, "max cost/day $ (0 = off)", f.c),
+      h("label", { title: "After the free script review passes, also run the AI reviewer (uses more Claude)" }, ai, "also run AI review"), h("button", { class: "primary", onclick: save }, "Save")),
+    h("div", { class: "mute small", style: "margin-top:6px" }, "A researcher run counts as 3 calls, an agent step as 1. The budget is an estimate: Claude does not report your remaining allowance. If the real limit is hit, work is held and resumed automatically after the reset."),
+    u.recent.length ? h("table", { style: "margin-top:8px" }, h("thead", {}, h("tr", {}, ["When", "Source", "Agent", "Strategy", "Status", "Time", "Tokens in/out", "Cost"].map(t => h("th", {}, t)))),
+      h("tbody", {}, u.recent.map(r => h("tr", {}, h("td", { class: "small mute" }, dt(r.ts)), h("td", { class: "small" }, r.source), h("td", { class: "small" }, r.agent), h("td", { class: "small" }, r.strategy || ""), h("td", { class: "small" }, r.status + (r.limit_hit ? " (limit)" : "")),
+        h("td", { class: "small" }, r.duration_ms ? Math.round(r.duration_ms / 1000) + " s" : ""), h("td", { class: "small" }, r.input_tokens != null ? `${r.input_tokens} / ${r.output_tokens}` : ""), h("td", { class: "small" }, r.cost_usd != null ? "$" + r.cost_usd.toFixed(3) : ""))))) : null);
+}
+
+function jobsView() {
+  const rows = st.data.jobs.map(j => {
+    const run = j.status === "running";
+    return h("tr", {}, h("td", {}, "#" + j.id), h("td", {}, j.kind), h("td", {}, j.label, j.note ? h("div", { class: "small mute" }, j.note.slice(0, 220)) : null),
+      h("td", {}, badge(j.status, run), j.phase ? h("div", { class: "small mute" }, j.phase) : null), h("td", { class: "small mute" }, dt(j.started)), h("td", { class: "small mute" }, dt(j.ended)),
+      h("td", {}, h("div", { class: "row" }, h("button", { onclick: () => openLog(j.id) }, "Log"), run ? h("button", { class: "danger", onclick: () => confirm("Stop this job?") && act(() => api(`/api/jobs/${j.id}/cancel`, {})) }, "Stop") : null),
+        j.status === "needs_input" && j.questions.length ? h("div", { class: "banner small", style: "margin-top:6px" }, j.questions.map(q => h("div", {}, q)),
+          h("div", { class: "row", style: "margin-top:6px" }, h("input", { id: "ans" + j.id, placeholder: "your answer", style: "flex:1" }), h("button", { class: "primary", onclick: () => act(() => api(`/api/jobs/${j.id}/answer`, { text: $("#ans" + j.id).value })) }, "Send"))) : null));
+  });
+  return h("div", {}, usageCard(), h("div", { class: "card" }, h("table", {}, h("thead", {}, h("tr", {}, ["Job", "Kind", "What", "Status", "Started", "Ended", ""].map(t => h("th", {}, t)))), h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 7, class: "mute" }, "No jobs yet."))))));
+}
+async function openLog(id) { const l = await api(`/api/jobs/${id}/log`); showModal(h("div", {}, h("div", { class: "row" }, h("h3", { style: "margin:0" }, "Job #" + id + " log"), h("span", { style: "flex:1" }), h("button", { onclick: closeModal }, "Close")), h("pre", {}, l.log || "(empty)"))); }
+
+// ---------- strategy page: view, edit, tag, copy, rename ----------
+const VIEW_TAGS = ["bullish", "bearish", "neutral", "both-sides", "hedge"];
+const SHORT_FIELDS = ["family", "timeframe", "entry_trigger", "exit_type"];
+const RULE_FIELDS = ["entry_long", "entry_short", "exit", "stop", "target", "filters", "notes", "testable_reason"];
+
+async function loadPage() {
+  const id = st.page.id;
+  const [d, c, tg] = await Promise.all([api("/api/strategies/" + id), api("/api/strategies/" + id + "/code"), api("/api/tags")]);
+  Object.assign(st.page, { d, code: c, tags: tg });
+  st.page.draft = st.page.draft || {};
+  renderPage();
+}
+const pact = async (fn) => { try { await fn(); } catch (e) { alert(e.message); } try { await loadPage(); } catch (e) { alert(e.message); } };
+
+function renderPage() {
+  const p = st.page, d = p.d;
+  if (!d) return;
+  const live = st.data && st.data.strategies.find(s => s.id === d.id);
+  const status = live ? live.status : d.status;
+  const running = status === "in_progress";
+  const inst = h("select", { id: "pinst" }, (st.data ? st.data.instruments : ["NIFTY"]).map(i => h("option", { value: i }, i)));
+  const date = h("input", { type: "date", id: "pdate", title: "empty = previous trading day" });
+  const head = h("div", { class: "card" },
+    h("div", { class: "row" },
+      h("a", { href: "#" }, "← All strategies"), h("span", { style: "flex:1" }),
+      inst, date,
+      h("button", { class: "primary", disabled: running || d.testable === "no", onclick: () => pact(() => api(`/api/strategies/${d.id}/run`, { instrument: $("#pinst").value, date: $("#pdate").value })) }, "Run"),
+      h("button", { onclick: () => { const n = prompt("Name for the copy (it gets its own code files and can be edited and run separately):", d.name + " copy"); if (n) act(async () => { const r = await api(`/api/strategies/${d.id}/copy`, { name: n }); location.hash = "#/strategy/" + r.id; }); } }, "Copy…"),
+      h("button", { onclick: () => { const n = prompt("New name:", d.name); if (n) pact(() => api(`/api/strategies/${d.id}/rename`, { name: n })); } }, "Rename"),
+      h("button", { onclick: () => pact(() => api(`/api/strategies/${d.id}/archive`, { on: !d.archived_at })) }, d.archived_at ? "Unarchive" : "Archive"),
+      h("button", { class: "danger", onclick: () => { const t = prompt(`Delete “${d.name}” and all its runs? Type DELETE to confirm:`); if (t === "DELETE") act(async () => { await api(`/api/strategies/${d.id}/delete`, { confirm: "DELETE", delete_files: false }); location.hash = "#"; }); } }, "Delete")),
+    h("div", { class: "row small", style: "margin-top:8px" }, h("b", {}, "Run on many days:"),
+      h("label", {}, "from", h("input", { type: "date", id: "rfrom" })), h("label", {}, "to", h("input", { type: "date", id: "rto" })),
+      h("label", {}, "or last", h("input", { type: "number", id: "rdays", min: 1, max: 60, style: "width:60px", placeholder: "N" }), "days"),
+      h("label", { title: "also use days where the cached contract was not the nearest expiry (behaves differently)" }, h("input", { type: "checkbox", id: "rfar" }), "include far-expiry days"),
+      h("button", { class: "primary", disabled: running, onclick: () => { if (!$("#rfrom").value && !$("#rto").value && !$("#rdays").value) { alert("Give a date range or a number of days."); return; } pact(() => api(`/api/strategies/${d.id}/run`, { instrument: $("#pinst").value, from: $("#rfrom").value, to: $("#rto").value, days: $("#rdays").value, allow_far: $("#rfar").checked })); } }, "Run range"),
+      h("span", { class: "mute" }, "no Claude used; needs the code to exist (run once first)")),
+    h("h2", { style: "margin:8px 0 4px" }, d.name),
+    h("div", { class: "row small" }, h("span", { id: "pstatus" }, badge(d.archived_at ? "archived" : status, running), running && live ? " " + (live.phase || "") + " " + (live.status_note || "") : ""),
+      h("span", { class: "mute" }, `${d.origin} · slug ${d.slug}`),
+      d.parent ? h("span", { class: "mute" }, "copied from ", h("a", { href: "#/strategy/" + d.parent.id }, d.parent.name)) : null,
+      d.code_edited_at ? h("span", { class: "mute" }, "code edited " + dt(d.code_edited_at)) : null),
+    tagEditor(d));
+  const tabs = ["rules", "code", "backtest", "runs"];
+  const nav = h("div", { class: "row", style: "margin:4px 0 12px" }, tabs.map(t => h("button", { class: p.tab === t ? "on primary" : "", onclick: () => { p.tab = t; renderPage(); } },
+    { rules: "Rules", code: "Strategy code", backtest: "Backtest file", runs: "Runs (" + d.runs.length + ")" }[t])));
+  const body = { rules: rulesTab, code: (x) => codeTab(x, "strategy"), backtest: (x) => codeTab(x, "backtest"), runs: runsTab }[p.tab](d);
+  $("#view").replaceChildren(head, nav, body);
+}
+
+function tagEditor(d) {
+  const tags = d.tags || [], all = st.page.tags;
+  const save = (t) => pact(() => api(`/api/strategies/${d.id}/tags`, { tags: t }));
+  const dl = h("datalist", { id: "taglist" }, [...new Set([...all.suggested, ...Object.keys(all.counts)])].map(t => h("option", { value: t })));
+  const inp = h("input", { list: "taglist", placeholder: "add tag…", id: "newtag", size: 14, onkeydown: (e) => { if (e.key === "Enter") add(); } });
+  const add = () => { const v = inp.value.trim(); if (v) save([...tags, v]); };
+  return h("div", { style: "margin-top:8px" },
+    h("div", { class: "row small" }, h("span", { class: "mute" }, "Market view:"),
+      VIEW_TAGS.map(t => h("button", { class: "tagbtn small" + (tags.includes(t) ? " on" : ""), onclick: () => save(tags.includes(t) ? tags.filter(x => x !== t) : [...tags, t]) }, t))),
+    h("div", { class: "row small", style: "margin-top:6px" }, h("span", { class: "mute" }, "Tags:"),
+      tags.map(t => h("span", { class: "chip", title: "click to remove", onclick: () => save(tags.filter(x => x !== t)) }, t + " ×")), inp, dl, h("button", { class: "small", onclick: add }, "Add")));
+}
+
+function rulesTab(d) {
+  const spec = d.spec || {}, fields = {};
+  const val = (k) => spec[k] == null ? "" : (typeof spec[k] === "object" ? JSON.stringify(spec[k], null, 1) : String(spec[k]));
+  const ctl = (k, rows) => { const e = rows ? h("textarea", { class: "rule", rows }, val(k)) : h("input", { value: val(k), style: "width:100%" }); fields[k] = e; return h("div", { class: "field" }, h("label", {}, k.replace("_", " ")), e); };
+  const indicators = h("input", { value: (spec.indicators || []).join(", "), style: "width:100%" }); fields.indicators = indicators;
+  const params = h("textarea", { rows: 6 }, val("params")); fields.params = params;
+  const msg = h("span", { class: "small" });
+  const save = async () => {
+    const out = {};
+    for (const [k, e] of Object.entries(fields)) out[k] = e.value;
+    try { out.params = out.params.trim() ? JSON.parse(out.params) : {}; } catch (er) { msg.textContent = "params is not valid JSON"; msg.className = "small neg"; return; }
+    try { await api(`/api/strategies/${d.id}/spec`, { fields: out }); await loadPage(); } catch (er) { msg.textContent = er.message; msg.className = "small neg"; }
+  };
+  return h("div", { class: "card" },
+    h("div", { class: "banner small" }, "Editing the rules changes the stored description only. The code is not regenerated: edit it in the “Strategy code” tab (or ask Claude in the chat) so it matches."),
+    h("div", { class: "row" }, SHORT_FIELDS.map(k => h("div", { style: "flex:1;min-width:160px" }, ctl(k)))),
+    h("div", { class: "field" }, h("label", {}, "indicators (comma separated)"), indicators),
+    RULE_FIELDS.map(k => ctl(k, k === "notes" || k === "testable_reason" ? 2 : 3)),
+    h("div", { class: "field" }, h("label", {}, "params (JSON)"), params),
+    h("div", { class: "row" }, h("button", { class: "primary", onclick: save }, "Save rules"), msg),
+    d.sources && d.sources.length ? h("div", { style: "margin-top:12px" }, h("b", {}, "Sources"), d.sources.map(s => h("div", { class: "small" }, /^https?:\/\//i.test(s.url || "") ? h("a", { href: s.url, target: "_blank", rel: "noopener noreferrer" }, s.title || s.url) : (s.title || "source"), h("span", { class: "mute" }, " · " + (s.type || ""))))) : null);
+}
+
+function codeTab(d, kind) {
+  const p = st.page, c = p.code[kind];
+  if (!c.exists) return h("div", { class: "card mute" }, kind === "strategy" ? "No code file yet. Run the strategy once and the strategy-writer agent will create it from the rules." : "No backtest file yet. It is created by the first run.");
+  const key = kind + ":" + d.slug;
+  const ta = h("textarea", { rows: 32, spellcheck: false, oninput: (e) => { p.draft[key] = e.target.value; dirty.textContent = "unsaved changes"; },
+    onkeydown: (e) => { if (e.key === "Tab") { e.preventDefault(); const s = e.target.selectionStart; e.target.setRangeText("    ", s, e.target.selectionEnd, "end"); p.draft[key] = e.target.value; dirty.textContent = "unsaved changes"; } } });
+  ta.value = p.draft[key] != null ? p.draft[key] : c.text;
+  const dirty = h("span", { class: "small mute" }, p.draft[key] != null && p.draft[key] !== c.text ? "unsaved changes" : "");
+  const msg = h("div", { class: "small" });
+  const save = async () => {
+    try {
+      const r = await api(`/api/strategies/${d.id}/code`, { kind, text: ta.value });
+      delete p.draft[key];
+      await loadPage();
+      const m = $("#codemsg"); if (m) { m.textContent = "Saved. " + (r.warnings || []).join(" · "); m.className = "small " + ((r.warnings || []).length ? "" : "ok"); }
+    } catch (er) { msg.textContent = "Not saved: " + er.message; msg.className = "small neg"; }
+  };
+  const versions = p.code.versions.filter(v => v.kind === kind);
+  const warn = kind === "strategy" && d.runs.length ? h("div", { class: "banner small" }, "Saving changes to the code: earlier runs are kept but marked “old version” and left out of the performance numbers. Run the strategy again to measure the new code.") : null;
+  return h("div", { class: "card" }, warn,
+    h("div", { class: "row small", style: "margin-bottom:6px" }, h("b", {}, c.file), dirty, h("span", { style: "flex:1" }),
+      h("button", { class: "primary", onclick: save }, "Save"),
+      h("button", { onclick: () => { delete p.draft[key]; renderPage(); } }, "Discard changes")),
+    ta, msg, h("div", { id: "codemsg", class: "small" }),
+    h("div", { class: "small mute", style: "margin-top:6px" }, "A syntax error blocks saving. Every save keeps the previous version below. For the strategy file, the backtest imports class `Strategy(client, clock, sleeper)`."),
+    h("h4", {}, "Previous versions"),
+    versions.length ? h("table", {}, h("tbody", {}, versions.map(v => h("tr", {}, h("td", { class: "small" }, v.time.replace("T", " ")),
+      h("td", {}, h("button", { class: "small", onclick: async () => { const r = await api(`/api/strategies/${d.id}/code/version?name=${encodeURIComponent(v.name)}`); showModal(h("div", {}, h("div", { class: "row" }, h("b", {}, v.name), h("span", { style: "flex:1" }), h("button", { onclick: closeModal }, "Close")), h("pre", { style: "max-height:70vh" }, r.text))); } }, "View"),
+        " ", h("button", { class: "small", onclick: () => confirm("Restore this version? The current text is saved as a version first.") && pact(async () => { await api(`/api/strategies/${d.id}/code/restore`, { name: v.name }); delete p.draft[key]; }) }, "Restore")))))) : h("div", { class: "small mute" }, "none yet"));
+}
+
+function runsTab(d) {
+  if (!d.runs.length) return h("div", { class: "card mute" }, "No runs yet. Use Run at the top of this page.");
+  return h("div", { class: "card" }, h("table", {}, h("thead", {}, h("tr", {}, ["Date", "Instrument", "Trades", "P&L", "Win rate", "Review", "Expiry", "Version", ""].map(t => h("th", {}, t)))),
+    h("tbody", {}, d.runs.map(r => h("tr", { class: "click", onclick: () => openRun(r.id) }, h("td", {}, r.day), h("td", {}, r.instrument), h("td", {}, r.trades), h("td", {}, money(r.gross_pnl)),
+      h("td", {}, r.win_rate == null ? "–" : Math.round(r.win_rate * 100) + "%"), h("td", {}, r.verdict || ""),
+      h("td", { class: "small mute" }, r.nearest === 0 ? `far (${r.dte}d)` : (r.dte != null ? `nearest (${r.dte}d)` : "")),
+      h("td", { class: "small mute" }, d.code_edited_at && r.created < d.code_edited_at ? "old version" : "current"),
+      h("td", {}, h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); if (confirm("Delete this run?")) pact(() => api(`/api/runs/${r.id}/delete`, { delete_files: false })); } }, "×")))))));
+}
+
+function route() {
+  const m = location.hash.match(/^#\/strategy\/(\d+)$/);
+  if (m) { st.page = { id: +m[1], tab: "rules", draft: {} }; $("#tabs").replaceChildren(); $("#view").replaceChildren(h("div", { class: "mute" }, "Loading…")); loadPage().catch(e => $("#view").replaceChildren(h("div", { class: "banner" }, e.message))); }
+  else { st.page = null; render(); }
+}
+window.addEventListener("hashchange", route);
+
+// ---------- backup: export / import everything ----------
+const mb = (b) => (b / 1024 / 1024).toFixed(1) + " MB";
+function backupView() {
+  const b = st.backup;
+  if (!b) return h("div", {}, "Loading…");
+  const pv = b.preview;
+  const exportBtn = h("button", { class: "primary", onclick: async (e) => {
+    e.target.disabled = true; e.target.textContent = "Creating backup…"; st.backupBusy = true;
+    try { const r = await api("/api/backup/export", {}); st.backupBusy = false; st.backup = { preview: await api("/api/backup/preview"), list: await api("/api/backup/list") }; render(); window.location = "/api/backup/download/" + encodeURIComponent(r.name); }
+    catch (er) { st.backupBusy = false; alert(er.message); render(); }
+  } }, "Create backup and download");
+  const ow = h("input", { type: "checkbox", id: "bk_ow" }), dry = h("input", { type: "checkbox", id: "bk_dry", checked: true }), file = h("input", { type: "file", accept: ".zip", id: "bk_file" });
+  const doImport = async (e) => {
+    if (!file.files[0]) { alert("Choose a backup .zip file first."); return; }
+    if (!dry.checked && !confirm("Import this backup? The databases in this workspace are REPLACED by the ones in the backup (a safety backup of the current state is made first). Files that already exist are kept unless you ticked overwrite.")) return;
+    e.target.disabled = true; e.target.textContent = "Working…"; st.backupBusy = true;
+    const fd = new FormData(); fd.append("file", file.files[0]); fd.append("overwrite", ow.checked ? "1" : "0"); fd.append("dry_run", dry.checked ? "1" : "0");
+    try {
+      const r = await fetch("/api/backup/import", { method: "POST", headers: { "X-Requested-With": "strategy-lab" }, body: fd });
+      const j = await r.json().catch(() => ({}));
+      st.importReport = r.ok ? j : { error: j.error || r.statusText };
+    } catch (er) { st.importReport = { error: er.message }; }
+    st.backupBusy = false; st.backup = { preview: await api("/api/backup/preview"), list: await api("/api/backup/list") }; render();
+  };
+  const rep = st.importReport;
+  const repView = !rep ? null : rep.error ? h("div", { class: "banner" }, "Import refused: " + rep.error) :
+    h("div", { class: "card", style: "border-color:var(--pos)" }, h("b", {}, rep.dry_run ? "Check only: nothing was changed" : "Import finished"),
+      h("div", { class: "small" }, `${rep.verified_files} files verified (checksums OK) · ${rep.written} ${rep.dry_run ? "would be written" : "written"} · ${rep.identical_skipped} already identical · ${rep.conflicts.length} conflicts`),
+      rep.databases_replaced.length ? h("div", { class: "small" }, "Databases " + (rep.dry_run ? "that would be replaced: " : "replaced: ") + rep.databases_replaced.join(", ")) : null,
+      rep.safety_backup ? h("div", { class: "small" }, "Safety backup of the previous state: " + rep.safety_backup) : null,
+      rep.conflicts.length ? h("div", { class: "small mute" }, "Kept your local version of: " + rep.conflicts.slice(0, 8).join(", ") + (rep.conflicts.length > 8 ? " …" : "") + " (tick overwrite to replace)") : null,
+      rep.source && rep.source.created ? h("div", { class: "small mute" }, "Backup made " + rep.source.created + " with script_openalgo " + rep.source.package_version) : null);
+  return h("div", {},
+    h("div", { class: "card" }, h("b", {}, "Export everything"),
+      h("div", { class: "small mute", style: "margin:6px 0" }, "One zip with every strategy, result, candle file, database, saved code version, agent and knowledge file. Every file has a SHA-256 checksum inside, verified on import. Your API key (.env) is NOT included."),
+      h("table", {}, h("thead", {}, h("tr", {}, ["Part", "Files", "Size"].map(t => h("th", {}, t)))), h("tbody", {}, Object.entries(pv.groups).map(([g, x]) => h("tr", {}, h("td", {}, { cache: "candle data", results: "backtest results", strategies: "strategy files", strategy_db: "databases, code versions, logs", ".claude": "agents, skill, knowledge, state" }[g] || g), h("td", {}, x.files), h("td", {}, mb(x.bytes)))),
+        h("tr", {}, h("td", {}, h("b", {}, "Total")), h("td", {}, h("b", {}, pv.files)), h("td", {}, h("b", {}, mb(pv.bytes)))))),
+      pv.notes.length ? h("div", { class: "banner small" }, pv.notes) : null, h("div", { style: "margin-top:8px" }, exportBtn)),
+    h("div", { class: "card" }, h("b", {}, "Backups saved on this computer"), h("div", { class: "mute small" }, "Folder: " + b.list.folder),
+      h("table", {}, h("tbody", {}, b.list.items.length ? b.list.items.map(i => h("tr", {}, h("td", {}, h("a", { href: "/api/backup/download/" + encodeURIComponent(i.name) }, i.name)), h("td", { class: "small" }, mb(i.bytes)), h("td", { class: "small mute" }, new Date(i.created * 1000).toLocaleString()),
+        h("td", {}, h("button", { class: "danger small", onclick: () => confirm("Delete this backup file?") && act(() => api("/api/backup/delete", { name: i.name })) }, "Delete")))) : h("tr", {}, h("td", { class: "mute" }, "none yet"))))),
+    h("div", { class: "card" }, h("b", {}, "Import a backup"),
+      h("div", { class: "banner small", style: "margin-top:6px" }, "Importing replaces the databases of this workspace with the ones in the backup. A safety backup of the current state is made first. Files that already exist are kept unless you tick overwrite. Stop running jobs first. Start with “check only”."),
+      h("div", { class: "row", style: "margin:8px 0" }, file, h("label", {}, dry, "check only (change nothing)"), h("label", {}, ow, "overwrite files that differ"), h("button", { class: "primary", onclick: doImport }, "Verify / Import")),
+      repView || ""));
+}
+
+// ---------- loop ----------
+function render() {
+  if (!st.data) return;
+  if (st.page) {                                    // never rebuild the editor on a poll; only refresh header and status badge
+    renderHeader();
+    const el = $("#pstatus"), live = st.page.d && st.data.strategies.find(x => x.id === st.page.d.id);
+    if (el && live) el.replaceChildren(badge(live.archived_at ? "archived" : live.status, live.status === "in_progress"), live.status === "in_progress" ? " " + (live.phase || "") + " " + (live.status_note || "") : "");
+    return;
+  }
+  renderHeader(); renderTabs();
+  const v = { strategies: strategiesView, results: resultsView, data: dataView, jobs: jobsView, backup: backupView }[st.tab]();
+  const focus = document.activeElement && document.activeElement.id === "q";
+  $("#view").replaceChildren(v);
+  if (focus) { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+}
+async function refresh() {
+  try {
+    if (document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName) && document.activeElement.id !== "q" && st.data) return;   // do not clobber what the user is editing
+    st.data = await api("/api/state");
+    if (!st.page && st.tab === "results") st.results = await api("/api/results");
+    if (!st.page && st.tab === "data") st.dataList = await api("/api/data");
+    if (!st.page && st.tab === "backup" && !st.backupBusy) st.backup = { preview: await api("/api/backup/preview"), list: await api("/api/backup/list") };
+    render();
+  } catch (e) { $("#banner").replaceChildren(h("div", { class: "banner" }, "Cannot reach the server: " + e.message)); }
+}
+refresh().then(route);
+setInterval(() => { if (!document.hidden && $("#modal").hidden) refresh(); }, 3000);
+</script>
+</body>
+</html>

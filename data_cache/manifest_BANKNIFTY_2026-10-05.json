@@ -1,0 +1,240 @@
+{
+ "instrument": "BANKNIFTY",
+ "date": "2026-10-05",
+ "expiry": "2026-10-27",
+ "lot_size": 30,
+ "strikes": [
+  54100,
+  54200,
+  54300,
+  54400,
+  54500,
+  54600,
+  54700,
+  54800,
+  54900,
+  55000,
+  55100,
+  55200,
+  55300,
+  55400
+ ],
+ "series": {
+  "BANKNIFTY": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654100CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654100PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654200CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654200PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654300CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654300PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654400CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654400PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654500CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654500PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654600CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654600PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654700CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654700PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654800CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654800PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654900CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654900PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2655000CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2655000PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2655100CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2655100PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2655200CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2655200PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2655300CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2655300PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2655400CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2655400PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "DAILY": {
+   "rows": 94,
+   "last_before_day": "2026-10-01"
+  }
+ },
+ "issues": [],
+ "warnings": [],
+ "complete": true,
+ "created": "2026-10-17T18:16:12",
+ "days_to_expiry": 22,
+ "nearest": true,
+ "previous_expiry": "2026-09-29",
+ "backfilled": true,
+ "lot_size_note": "current lot size (history of lot changes not available)"
+}

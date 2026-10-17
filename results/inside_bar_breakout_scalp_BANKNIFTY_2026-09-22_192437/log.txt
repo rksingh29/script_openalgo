@@ -1,0 +1,27 @@
+2026-09-22 09:00:00 | Strategy InsideBarBreakoutScalp starting on BANKNIFTY
+2026-09-22 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-09-22 10:30:00 | Inside bar at bar 14 (10:25) inside mother bar 13 (high 56567.40 / low 56494.55); watching for breakout
+2026-09-22 10:35:00 | Bearish breakdown: bar 15 closed 56445.65 < mother low 56494.55 (inside bars seen: 1)
+2026-09-22 10:35:00 | ATM PE BANKNIFTY27OCT2656400PE | lot 30 | expiry 27OCT26 | underlying_ltp 56445.65
+2026-09-22 10:35:01 | BUY BANKNIFTY27OCT2656400PE qty 30 @ 624.0 | order SIM00001 | PE inside-bar breakout | index 56445.65 stop 56595.62 target 56422.90
+2026-09-22 10:35:01 | ENTER PE | index 56445.65 stop 56595.62 (0.27%) target 56422.90 (R:R 2.0) | trade 1/4
+2026-09-22 10:36:02 | SELL BANKNIFTY27OCT2656400PE qty 30 @ 648.85 | order SIM00002 | target hit (index 56399.05 <= 56422.90)
+2026-09-22 10:36:02 | EXIT PE target hit (index 56399.05 <= 56422.90) | qty 30 @ 648.85 | pnl +746 | day P&L +746
+2026-09-22 10:50:02 | Inside bar at bar 18 (10:45) inside mother bar 17 (high 56424.70 / low 56339.30); watching for breakout
+2026-09-22 11:00:02 | Bar 20 is another inside bar (2 so far); range tightening, still watching mother bar 17
+2026-09-22 11:05:02 | Bearish breakdown: bar 21 closed 56329.70 < mother low 56339.30 (inside bars seen: 2)
+2026-09-22 11:05:02 | ATM PE BANKNIFTY27OCT2656300PE | lot 30 | expiry 27OCT26 | underlying_ltp 56329.7
+2026-09-22 11:05:03 | BUY BANKNIFTY27OCT2656300PE qty 30 @ 647.0 | order SIM00003 | PE inside-bar breakout | index 56329.70 stop 56452.86 target 56318.25
+2026-09-22 11:05:03 | ENTER PE | index 56329.70 stop 56452.86 (0.22%) target 56318.25 (R:R 2.0) | trade 2/4
+2026-09-22 11:06:04 | SELL BANKNIFTY27OCT2656300PE qty 30 @ 653.4 | order SIM00004 | target hit (index 56314.10 <= 56318.25)
+2026-09-22 11:06:04 | EXIT PE target hit (index 56314.10 <= 56318.25) | qty 30 @ 653.4 | pnl +192 | day P&L +938
+2026-09-22 14:00:04 | Inside bar at bar 56 (13:55) inside mother bar 55 (high 56188.15 / low 56112.20); watching for breakout
+2026-09-22 14:10:04 | Bar 58 is another inside bar (2 so far); range tightening, still watching mother bar 55
+2026-09-22 14:15:04 | Bullish breakout: bar 59 closed 56352.70 > mother high 56188.15 (inside bars seen: 2)
+2026-09-22 14:15:04 | ATM CE BANKNIFTY27OCT2656400CE | lot 30 | expiry 27OCT26 | underlying_ltp 56352.7
+2026-09-22 14:15:05 | BUY BANKNIFTY27OCT2656400CE qty 30 @ 1072.15 | order SIM00005 | CE inside-bar breakout | index 56352.70 stop 56084.02 target 56671.10
+2026-09-22 14:15:05 | ENTER CE | index 56352.70 stop 56084.02 (0.48%) target 56671.10 (R:R 2.0) | trade 3/4
+2026-09-22 15:15:06 | SELL BANKNIFTY27OCT2656400CE qty 30 @ 1075.4 | order SIM00006 | square-off time
+2026-09-22 15:15:06 | EXIT CE square-off time | qty 30 @ 1075.4 | pnl +98 | day P&L +1035
+2026-09-22 15:15:06 | Square-off time reached; stopping for the day
+2026-09-22 15:15:06 | Done for the day. Trades 3 | day P&L +1035

@@ -1,0 +1,12 @@
+PROMPT:
+Reply status pass with empty findings and questions (test only, do no work).
+
+IMPORTANT: your final message MUST end with the JSON result object described in your instructions.
+
+EXIT 0
+
+OUTPUT:
+{"type":"result","subtype":"success","is_error":false,"api_error_status":null,"duration_ms":3642,"duration_api_ms":4508,"ttft_ms":3622,"ttft_stream_ms":1418,"time_to_request_ms":108,"num_turns":1,"result":"{\"status\": \"pass\", \"findings\": [], \"questions\": []}","stop_reason":"end_turn","session_id":"9d525be6-52eb-4444-b535-163cd9ac5e88","total_cost_usd":0.004823200000000001,"usage":{"input_tokens":2,"cache_creation_input_tokens":250,"cache_read_input_tokens":7884,"output_tokens":22,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":250,"ephemeral_5m_input_tokens":0},"inference_geo":"global","iterations":[{"input_tokens":2,"output_tokens":22,"cache_read_input_tokens":7884,"cache_creation_input_tokens":250,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":250},"type":"message"}],"speed":"standard"},"modelUsage":{"claude-haiku-4-5-20251001":{"inputTokens":552,"outputTokens":14,"cacheReadInputTokens":0,"cacheCreationInputTokens":0,"webSearchRequests":0,"costUSD":0.0006219999999999999,"contextWindow":200000,"maxOutputTokens":32000},"claude-sonnet-5":{"inputTokens":2,"outputTokens":22,"cacheReadInputTokens":7884,"cacheCreationInputTokens":250,"webSearchRequests":0,"costUSD":0.0042012,"contextWindow":1000000,"maxOutputTokens":64000}},"permission_denials":[],"terminal_reason":"completed","fast_mode_state":"off","uuid":"76691573-4ef2-405e-bdc8-758e8d285184"}
+
+
+STDERR:

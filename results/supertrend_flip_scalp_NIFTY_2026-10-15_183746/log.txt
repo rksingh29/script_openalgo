@@ -1,0 +1,7 @@
+2026-10-15 09:00:00 | Strategy SupertrendFlipScalp starting on NIFTY
+2026-10-15 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-10-15 12:40:00 | Supertrend flipped to 'up' at bar 40 (12:35), line 22923.14
+2026-10-15 12:40:00 | Entry skipped: 15m Supertrend filter is 'down', need 'up'
+2026-10-15 14:50:00 | Supertrend flipped to 'down' at bar 66 (14:45), line 23044.38
+2026-10-15 15:15:00 | Square-off time reached; stopping for the day
+2026-10-15 15:15:00 | Done for the day. Trades 0 | day P&L +0

@@ -1,0 +1,176 @@
+{
+ "strategy": "vwap_reclaim_scalp",
+ "instrument": "NIFTY",
+ "from": "2026-10-13",
+ "to": "2026-10-16",
+ "allow_far": false,
+ "code_hash": "2809076e48",
+ "skipped": [
+  [
+   "2026-09-24",
+   "incomplete data"
+  ],
+  [
+   "2026-09-25",
+   "cached contract was not the nearest expiry (24 days to expiry); use --allow-far"
+  ],
+  [
+   "2026-09-28",
+   "incomplete data"
+  ],
+  [
+   "2026-09-29",
+   "incomplete data"
+  ],
+  [
+   "2026-09-30",
+   "incomplete data"
+  ],
+  [
+   "2026-10-01",
+   "incomplete data"
+  ],
+  [
+   "2026-10-05",
+   "cached contract was not the nearest expiry (14 days to expiry); use --allow-far"
+  ],
+  [
+   "2026-10-06",
+   "cached contract was not the nearest expiry (13 days to expiry); use --allow-far"
+  ],
+  [
+   "2026-10-07",
+   "cached contract was not the nearest expiry (12 days to expiry); use --allow-far"
+  ],
+  [
+   "2026-10-08",
+   "cached contract was not the nearest expiry (11 days to expiry); use --allow-far"
+  ],
+  [
+   "2026-10-09",
+   "cached contract was not the nearest expiry (10 days to expiry); use --allow-far"
+  ],
+  [
+   "2026-10-12",
+   "cached contract was not the nearest expiry (7 days to expiry); use --allow-far"
+  ]
+ ],
+ "aggregate": {
+  "days": 4,
+  "failed_days": 0,
+  "total_pnl": 0,
+  "avg_per_day": 0.0,
+  "win_days": 0,
+  "loss_days": 0,
+  "flat_days": 4,
+  "best_day": 0,
+  "worst_day": 0,
+  "max_drawdown": 0.0,
+  "profit_factor": null,
+  "trades": 0,
+  "zero_trade_days": 4
+ },
+ "days": [
+  {
+   "day": "2026-10-13",
+   "trades": 0,
+   "gross_pnl": 0,
+   "win_rate": null,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\vwap_reclaim_scalp_NIFTY_2026-10-13_184123",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-13",
+    "trades": 0,
+    "cycles_with_trades": 0,
+    "reversals": 0,
+    "gross_pnl": 0,
+    "net_pnl": 0,
+    "win_rate": null,
+    "avg_win": null,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {},
+    "stop_reasons": {},
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-14",
+   "trades": 0,
+   "gross_pnl": 0,
+   "win_rate": null,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\vwap_reclaim_scalp_NIFTY_2026-10-14_184125",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-14",
+    "trades": 0,
+    "cycles_with_trades": 0,
+    "reversals": 0,
+    "gross_pnl": 0,
+    "net_pnl": 0,
+    "win_rate": null,
+    "avg_win": null,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {},
+    "stop_reasons": {},
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-15",
+   "trades": 0,
+   "gross_pnl": 0,
+   "win_rate": null,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\vwap_reclaim_scalp_NIFTY_2026-10-15_184220",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-15",
+    "trades": 0,
+    "cycles_with_trades": 0,
+    "reversals": 0,
+    "gross_pnl": 0,
+    "net_pnl": 0,
+    "win_rate": null,
+    "avg_win": null,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {},
+    "stop_reasons": {},
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-16",
+   "trades": 0,
+   "gross_pnl": 0,
+   "win_rate": null,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\vwap_reclaim_scalp_NIFTY_2026-10-16_184219",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-16",
+    "trades": 0,
+    "cycles_with_trades": 0,
+    "reversals": 0,
+    "gross_pnl": 0,
+    "net_pnl": 0,
+    "win_rate": null,
+    "avg_win": null,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {},
+    "stop_reasons": {},
+    "unclosed_positions": []
+   }
+  }
+ ],
+ "created": "2026-10-17T18:42:21"
+}

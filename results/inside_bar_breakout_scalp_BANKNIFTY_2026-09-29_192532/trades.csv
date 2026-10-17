@@ -1,0 +1,3 @@
+cycle,symbol,qty,entry_time,entry_price,exit_time,exit_price,gross_pnl,net_pnl
+0,BANKNIFTY27OCT2653900CE,30,10:40:00,1182.65,11:13:01,1312.0,3880.5,3880.5
+0,BANKNIFTY27OCT2654300CE,30,11:35:02,1159.25,15:15:03,1232.6,2200.5,2200.5

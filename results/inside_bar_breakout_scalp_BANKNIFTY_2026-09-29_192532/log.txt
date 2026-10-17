@@ -1,0 +1,20 @@
+2026-09-29 09:00:00 | Strategy InsideBarBreakoutScalp starting on BANKNIFTY
+2026-09-29 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-09-29 10:35:00 | Inside bar at bar 15 (10:30) inside mother bar 14 (high 53894.05 / low 53820.20); watching for breakout
+2026-09-29 10:40:00 | Bullish breakout: bar 16 closed 53895.95 > mother high 53894.05 (inside bars seen: 1)
+2026-09-29 10:40:00 | ATM CE BANKNIFTY27OCT2653900CE | lot 30 | expiry 27OCT26 | underlying_ltp 53895.95
+2026-09-29 10:40:01 | BUY BANKNIFTY27OCT2653900CE qty 30 @ 1182.65 | order SIM00001 | CE inside-bar breakout | index 53895.95 stop 53793.25 target 54101.35
+2026-09-29 10:40:01 | ENTER CE | index 53895.95 stop 53793.25 (0.19%) target 54101.35 (R:R 2.0) | trade 1/4
+2026-09-29 11:13:02 | SELL BANKNIFTY27OCT2653900CE qty 30 @ 1312.0 | order SIM00002 | target hit (index 54101.55 >= 54101.35)
+2026-09-29 11:13:02 | EXIT CE target hit (index 54101.55 >= 54101.35) | qty 30 @ 1312.0 | pnl +3880 | day P&L +3880
+2026-09-29 11:20:02 | Inside bar at bar 24 (11:15) inside mother bar 23 (high 54191.30 / low 53960.95); watching for breakout
+2026-09-29 11:25:02 | Bar 25 is another inside bar (2 so far); range tightening, still watching mother bar 23
+2026-09-29 11:30:02 | Bar 26 is another inside bar (3 so far); range tightening, still watching mother bar 23
+2026-09-29 11:35:02 | Bullish breakout: bar 27 closed 54256.25 > mother high 54191.30 (inside bars seen: 3)
+2026-09-29 11:35:02 | ATM CE BANKNIFTY27OCT2654300CE | lot 30 | expiry 27OCT26 | underlying_ltp 54256.25
+2026-09-29 11:35:03 | BUY BANKNIFTY27OCT2654300CE qty 30 @ 1159.25 | order SIM00003 | CE inside-bar breakout | index 54256.25 stop 53933.82 target 54405.30
+2026-09-29 11:35:03 | ENTER CE | index 54256.25 stop 53933.82 (0.59%) target 54405.30 (R:R 2.0) | trade 2/4
+2026-09-29 15:15:04 | SELL BANKNIFTY27OCT2654300CE qty 30 @ 1232.6 | order SIM00004 | square-off time
+2026-09-29 15:15:04 | EXIT CE square-off time | qty 30 @ 1232.6 | pnl +2200 | day P&L +6081
+2026-09-29 15:15:04 | Square-off time reached; stopping for the day
+2026-09-29 15:15:04 | Done for the day. Trades 2 | day P&L +6081

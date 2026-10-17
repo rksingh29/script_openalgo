@@ -1,0 +1,3 @@
+cycle,symbol,qty,entry_time,entry_price,exit_time,exit_price,gross_pnl,net_pnl
+0,NIFTY19OCT2623000CE,65,12:50:00,130.8,13:10:01,138.2,481.0,481.0
+0,NIFTY19OCT2623050CE,65,13:40:02,120.0,13:50:03,118.85,-74.75,-74.75

@@ -1,0 +1,9 @@
+{
+ "active": "default",
+ "items": {
+  "default": {
+   "db": "strategy_db/default.db",
+   "cache": "data_cache"
+  }
+ }
+}

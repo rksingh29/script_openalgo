@@ -1,0 +1,15 @@
+{
+ "date": "2026-10-13",
+ "trades": 0,
+ "cycles_with_trades": 0,
+ "reversals": 0,
+ "gross_pnl": 0,
+ "net_pnl": 0,
+ "win_rate": null,
+ "avg_win": null,
+ "avg_loss": null,
+ "max_drawdown": 0.0,
+ "pnl_per_cycle": {},
+ "stop_reasons": {},
+ "unclosed_positions": []
+}

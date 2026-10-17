@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "script_openalgo"
+version = "0.1.1"
+description = "Research, backtest and manage OpenAlgo option strategies against any OpenAlgo server (the server is not bundled)."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "pandas>=2.1",
+    "pyarrow>=14",
+    "flask>=3.0",
+    "openalgo>=2.0",
+]
+
+[project.scripts]
+script-openalgo = "script_openalgo.cli:main"
+
+# The wheel contains the whole package folder, including assets/ (agents, skill, example strategies),
+# webapp/static/ and backtest_core/templates/.
+[tool.hatch.build.targets.wheel]
+packages = ["src/script_openalgo"]
+
+# The tar.gz (sdist) must contain the same package folder plus the build files, so it can be built or installed from.
+[tool.hatch.build.targets.sdist]
+include = ["/src", "/build_all.py", "/README.md", "/pyproject.toml"]
+
+[tool.hatch.build]
+exclude = ["**/__pycache__", "**/*.pyc", "**/*.importing"]

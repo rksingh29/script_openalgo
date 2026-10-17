@@ -1,0 +1,24 @@
+{
+  "name": "Camarilla Pivot Reversal Scalp",
+  "aliases": ["Camarilla S3/R3 Scalp"],
+  "family": "pivot",
+  "timeframe": "5m",
+  "indicators": ["camarilla_pivots"],
+  "entry_trigger": "pivot_level_reversal",
+  "exit_type": "fixed_rr",
+  "entry_long": "Each day, compute Camarilla levels from the previous day's high (H), low (L) and close (C): R3 = C + (H-L)*1.1/4, R4 = C + (H-L)*1.1/2, S3 = C - (H-L)*1.1/4, S4 = C - (H-L)*1.1/2. Go long when price falls to and reverses off S3 (candle closes back above S3 after touching/piercing it) for a mean-reversion scalp back toward the pivot/R1; alternatively treat a close beyond S4 as a breakdown-continuation long... (sources specify both reversal-at-S3 and breakout-at-S4 variants; this spec uses the S3 reversal variant since it is the most commonly cited scalping rule).",
+  "entry_short": "Go short when price rises to and reverses off R3 (candle closes back below R3 after touching/piercing it), targeting a move back toward the pivot/R1.",
+  "exit": "Exit at target or stop.",
+  "stop": "Stop just beyond S4 (for the S3-reversal long) or beyond R4 (for the R3-reversal short).",
+  "target": "First target the next inner level (e.g. R1/S1 or the central pivot); fixed reward:risk ~1:1 to 2:1 commonly used.",
+  "filters": "Best used on timeframes with less noise; 5-minute is noisier than 15m/30m so only take reversal signals with a clear rejection candle (long wick) at the level.",
+  "params": {"camarilla_multiplier": 1.1, "reward_risk": 1.5},
+  "popularity": 4,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "sources": [
+    {"url": "https://www.bajajfinserv.in/camarilla-pivot-points", "title": "Camarilla Pivot Points Trading Guide - Formula, Strategy and Signals", "type": "broker_education"},
+    {"url": "https://arongroups.co/forex-articles/camarilla-pivot-trading-strategy/", "title": "Camarilla Pivot Trading Strategy: Intraday Breakouts & Mean Reversion", "type": "blog"},
+    {"url": "https://www.litefinance.org/blog/for-beginners/trading-strategies/camarilla-pivot-points-strategy/", "title": "Camarilla Pivot Points: Strategies for Successful Trading", "type": "broker_education"}
+  ]
+}

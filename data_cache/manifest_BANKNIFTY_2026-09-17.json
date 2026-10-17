@@ -1,0 +1,239 @@
+{
+ "instrument": "BANKNIFTY",
+ "date": "2026-09-17",
+ "expiry": "2026-10-27",
+ "lot_size": 30,
+ "strikes": [
+  55800,
+  55900,
+  56000,
+  56100,
+  56200,
+  56300,
+  56400,
+  56500,
+  56600,
+  56700,
+  56800
+ ],
+ "series": {
+  "BANKNIFTY": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2655800CE": {
+   "rows": 371,
+   "first": "09:19",
+   "last": "15:29",
+   "coverage": 0.989,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18"
+   ]
+  },
+  "BANKNIFTY27OCT2655800PE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "BANKNIFTY27OCT2655900CE": {
+   "rows": 372,
+   "first": "09:18",
+   "last": "15:29",
+   "coverage": 0.992,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17"
+   ]
+  },
+  "BANKNIFTY27OCT2655900PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656000CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656000PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656100CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656100PE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "BANKNIFTY27OCT2656200CE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "BANKNIFTY27OCT2656200PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656300CE": {
+   "rows": 373,
+   "first": "09:17",
+   "last": "15:29",
+   "coverage": 0.995,
+   "gaps": [
+    "09:15",
+    "09:16"
+   ]
+  },
+  "BANKNIFTY27OCT2656300PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656400CE": {
+   "rows": 372,
+   "first": "09:18",
+   "last": "15:29",
+   "coverage": 0.992,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17"
+   ]
+  },
+  "BANKNIFTY27OCT2656400PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656500CE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "BANKNIFTY27OCT2656500PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656600CE": {
+   "rows": 372,
+   "first": "09:18",
+   "last": "15:29",
+   "coverage": 0.992,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17"
+   ]
+  },
+  "BANKNIFTY27OCT2656600PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656700CE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "BANKNIFTY27OCT2656700PE": {
+   "rows": 368,
+   "first": "09:22",
+   "last": "15:29",
+   "coverage": 0.981,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20",
+    "09:21"
+   ]
+  },
+  "BANKNIFTY27OCT2656800CE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "BANKNIFTY27OCT2656800PE": {
+   "rows": 372,
+   "first": "09:18",
+   "last": "15:29",
+   "coverage": 0.992,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17"
+   ]
+  },
+  "DAILY": {
+   "rows": 83,
+   "last_before_day": "2026-09-16"
+  }
+ },
+ "issues": [],
+ "warnings": [],
+ "complete": true,
+ "created": "2026-10-17T18:15:51",
+ "days_to_expiry": 40,
+ "nearest": false,
+ "previous_expiry": "2026-09-29",
+ "backfilled": true,
+ "lot_size_note": "current lot size (history of lot changes not available)"
+}

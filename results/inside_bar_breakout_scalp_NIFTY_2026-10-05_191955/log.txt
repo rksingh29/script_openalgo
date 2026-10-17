@@ -1,0 +1,25 @@
+2026-10-05 09:00:00 | Strategy InsideBarBreakoutScalp starting on NIFTY
+2026-10-05 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-10-05 11:05:00 | Inside bar at bar 21 (11:00) inside mother bar 20 (high 22511.90 / low 22460.80); watching for breakout
+2026-10-05 11:10:00 | Bar 22 is another inside bar (2 so far); range tightening, still watching mother bar 20
+2026-10-05 11:15:00 | Bar 23 is another inside bar (3 so far); range tightening, still watching mother bar 20
+2026-10-05 11:20:00 | Bar 24 is another inside bar (4 so far); range tightening, still watching mother bar 20
+2026-10-05 11:30:00 | Bar 26 is another inside bar (5 so far); range tightening, still watching mother bar 20
+2026-10-05 11:40:00 | Bar 28 is another inside bar (6 so far); range tightening, still watching mother bar 20
+2026-10-05 11:45:00 | Bar 29 is another inside bar (7 so far); range tightening, still watching mother bar 20
+2026-10-05 11:50:00 | Bearish breakdown: bar 30 closed 22460.50 < mother low 22460.80 (inside bars seen: 7)
+2026-10-05 11:50:00 | ATM PE NIFTY19OCT2622450PE | lot 65 | expiry 19OCT26 | underlying_ltp 22460.5
+2026-10-05 11:50:01 | BUY NIFTY19OCT2622450PE qty 65 @ 215.0 | order SIM00001 | PE inside-bar breakout | index 22460.50 stop 22523.13 target 22451.70
+2026-10-05 11:50:01 | ENTER PE | index 22460.50 stop 22523.13 (0.28%) target 22451.70 (R:R 2.0) | trade 1/4
+2026-10-05 11:51:02 | SELL NIFTY19OCT2622450PE qty 65 @ 219.3 | order SIM00002 | target hit (index 22449.85 <= 22451.70)
+2026-10-05 11:51:02 | EXIT PE target hit (index 22449.85 <= 22451.70) | qty 65 @ 219.3 | pnl +280 | day P&L +280
+2026-10-05 12:15:02 | Inside bar at bar 35 (12:10) inside mother bar 34 (high 22451.00 / low 22397.10); watching for breakout
+2026-10-05 12:20:02 | Bar 36 is another inside bar (2 so far); range tightening, still watching mother bar 34
+2026-10-05 12:30:02 | Bullish breakout: bar 38 closed 22458.80 > mother high 22451.00 (inside bars seen: 2)
+2026-10-05 12:30:02 | ATM CE NIFTY19OCT2622450CE | lot 65 | expiry 19OCT26 | underlying_ltp 22458.8
+2026-10-05 12:30:03 | BUY NIFTY19OCT2622450CE qty 65 @ 324.15 | order SIM00003 | CE inside-bar breakout | index 22458.80 stop 22385.87 target 22604.66
+2026-10-05 12:30:03 | ENTER CE | index 22458.80 stop 22385.87 (0.32%) target 22604.66 (R:R 2.0) | trade 2/4
+2026-10-05 15:15:04 | SELL NIFTY19OCT2622450CE qty 65 @ 331.25 | order SIM00004 | square-off time
+2026-10-05 15:15:04 | EXIT CE square-off time | qty 65 @ 331.25 | pnl +462 | day P&L +741
+2026-10-05 15:15:04 | Square-off time reached; stopping for the day
+2026-10-05 15:15:04 | Done for the day. Trades 2 | day P&L +741

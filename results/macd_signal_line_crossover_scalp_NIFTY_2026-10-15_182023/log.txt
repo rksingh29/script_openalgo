@@ -1,0 +1,16 @@
+2026-10-15 09:00:00 | Strategy MacdSignalCrossoverScalp starting on NIFTY
+2026-10-15 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-10-15 12:50:00 | CE MACD/signal cross at bar 42 (12:45); entering
+2026-10-15 12:50:00 | ATM CE NIFTY19OCT2623000CE | lot 65 | expiry 19OCT26 | underlying_ltp 23005.5
+2026-10-15 12:50:01 | BUY NIFTY19OCT2623000CE qty 65 @ 130.8 | order SIM00001 | CE MACD/signal cross | index 23005.50 stop 22975.80
+2026-10-15 12:50:01 | ENTER CE | index 23005.50 stop 22975.80 (0.13%) target 23050.05 (R:R 1.5) | trade 1/4
+2026-10-15 13:10:02 | SELL NIFTY19OCT2623000CE qty 65 @ 138.2 | order SIM00002 | momentum fading: MACD/signal converging (|hist| 0.362 retraced from peak 1.371)
+2026-10-15 13:10:02 | EXIT CE momentum fading: MACD/signal converging (|hist| 0.362 retraced from peak 1.371) | qty 65 @ 138.2 | pnl +481 | day P&L +481
+2026-10-15 13:40:02 | CE MACD/signal cross at bar 52 (13:35); entering
+2026-10-15 13:40:02 | ATM CE NIFTY19OCT2623050CE | lot 65 | expiry 19OCT26 | underlying_ltp 23040.8
+2026-10-15 13:40:03 | BUY NIFTY19OCT2623050CE qty 65 @ 120.0 | order SIM00003 | CE MACD/signal cross | index 23040.80 stop 23020.18
+2026-10-15 13:40:03 | ENTER CE | index 23040.80 stop 23020.18 (0.09%) target 23071.73 (R:R 1.5) | trade 2/4
+2026-10-15 13:50:04 | SELL NIFTY19OCT2623050CE qty 65 @ 118.85 | order SIM00004 | momentum fading: MACD/signal converging (|hist| 0.263 retraced from peak 0.813)
+2026-10-15 13:50:04 | EXIT CE momentum fading: MACD/signal converging (|hist| 0.263 retraced from peak 0.813) | qty 65 @ 118.85 | pnl -75 | day P&L +406
+2026-10-15 15:15:04 | Square-off time reached; stopping for the day
+2026-10-15 15:15:04 | Done for the day. Trades 2 | day P&L +406

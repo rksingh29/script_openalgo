@@ -1,0 +1,19 @@
+{
+ "date": "2026-10-15",
+ "trades": 2,
+ "cycles_with_trades": 1,
+ "reversals": 1,
+ "gross_pnl": 406.25,
+ "net_pnl": 406.25,
+ "win_rate": 0.5,
+ "avg_win": 481.0,
+ "avg_loss": -74.75,
+ "max_drawdown": 74.75,
+ "pnl_per_cycle": {
+  "0": 406.25
+ },
+ "stop_reasons": {
+  "momentum fading: MACD/signal converging": 2
+ },
+ "unclosed_positions": []
+}

@@ -1,0 +1,15 @@
+2026-10-16 09:00:00 | Strategy BollingerBandBounceScalp starting on BANKNIFTY
+2026-10-16 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-10-16 12:40:00 | PE band-touch trigger at bar 40 (12:35); close 55790.40 RSI 65.8; waiting for reclaim confirmation
+2026-10-16 12:45:00 | Reclaim confirmed for PE at bar 41 (12:40); entering
+2026-10-16 12:45:00 | ATM PE BANKNIFTY27OCT2655800PE | lot 30 | expiry 27OCT26 | underlying_ltp 55766.05
+2026-10-16 12:45:01 | BUY BANKNIFTY27OCT2655800PE qty 30 @ 500.75 | order SIM00001 | PE BB bounce reclaim | index 55766.05 stop 55828.03 target(basis) 55706.21
+2026-10-16 12:45:01 | ENTER PE | index 55766.05 stop 55828.03 (0.11%) | trade 1/6
+2026-10-16 12:50:01 | Target (middle band) now 55715.75 | position PE
+2026-10-16 12:55:01 | Target (middle band) now 55722.72 | position PE
+2026-10-16 12:57:02 | SELL BANKNIFTY27OCT2655800PE qty 30 @ 519.1 | order SIM00002 | middle band target hit (index 55722.65 <= 55722.72)
+2026-10-16 12:57:02 | EXIT PE middle band target hit (index 55722.65 <= 55722.72) | qty 30 @ 519.1 | pnl +551 | day P&L +551
+2026-10-16 13:35:02 | PE band-touch trigger at bar 51 (13:30); close 55869.75 RSI 74.0; waiting for reclaim confirmation
+2026-10-16 13:40:02 | Reclaim not confirmed for PE at bar 52; setup dropped
+2026-10-16 15:15:02 | Square-off time reached; stopping for the day
+2026-10-16 15:15:02 | Done for the day. Trades 1 | day P&L +551

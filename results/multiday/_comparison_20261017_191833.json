@@ -1,0 +1,228 @@
+[
+ {
+  "strategy": "bollinger_band_bounce_scalp",
+  "instrument": "NIFTY",
+  "from": "2026-10-16",
+  "to": "2026-10-16",
+  "allow_far": false,
+  "code_hash": "ceea32e89a",
+  "skipped": [
+   [
+    "2026-09-24",
+    "incomplete data"
+   ],
+   [
+    "2026-09-25",
+    "cached contract was not the nearest expiry (24 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-09-28",
+    "incomplete data"
+   ],
+   [
+    "2026-09-29",
+    "incomplete data"
+   ],
+   [
+    "2026-09-30",
+    "incomplete data"
+   ],
+   [
+    "2026-10-01",
+    "incomplete data"
+   ],
+   [
+    "2026-10-05",
+    "cached contract was not the nearest expiry (14 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-10-06",
+    "cached contract was not the nearest expiry (13 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-10-07",
+    "cached contract was not the nearest expiry (12 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-10-08",
+    "cached contract was not the nearest expiry (11 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-10-09",
+    "cached contract was not the nearest expiry (10 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-10-12",
+    "cached contract was not the nearest expiry (7 days to expiry); use --allow-far"
+   ]
+  ],
+  "aggregate": {
+   "days": 1,
+   "failed_days": 0,
+   "total_pnl": 0,
+   "avg_per_day": 0.0,
+   "win_days": 0,
+   "loss_days": 0,
+   "flat_days": 1,
+   "best_day": 0,
+   "worst_day": 0,
+   "max_drawdown": 0.0,
+   "profit_factor": null,
+   "trades": 0,
+   "zero_trade_days": 1
+  },
+  "days": [
+   {
+    "day": "2026-10-16",
+    "trades": 0,
+    "gross_pnl": 0,
+    "win_rate": null,
+    "max_drawdown": 0.0,
+    "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\bollinger_band_bounce_scalp_NIFTY_2026-10-16_191742",
+    "verdict": "script-checked",
+    "findings": [],
+    "summary": {
+     "date": "2026-10-16",
+     "trades": 0,
+     "cycles_with_trades": 0,
+     "reversals": 0,
+     "gross_pnl": 0,
+     "net_pnl": 0,
+     "win_rate": null,
+     "avg_win": null,
+     "avg_loss": null,
+     "max_drawdown": 0.0,
+     "pnl_per_cycle": {},
+     "stop_reasons": {},
+     "unclosed_positions": []
+    }
+   }
+  ],
+  "created": "2026-10-17T19:17:42"
+ },
+ {
+  "strategy": "bollinger_band_bounce_scalp",
+  "instrument": "BANKNIFTY",
+  "from": "2026-10-16",
+  "to": "2026-10-16",
+  "allow_far": false,
+  "code_hash": "ceea32e89a",
+  "skipped": [
+   [
+    "2026-09-04",
+    "incomplete data"
+   ],
+   [
+    "2026-09-07",
+    "incomplete data"
+   ],
+   [
+    "2026-09-08",
+    "incomplete data"
+   ],
+   [
+    "2026-09-09",
+    "incomplete data"
+   ],
+   [
+    "2026-09-10",
+    "incomplete data"
+   ],
+   [
+    "2026-09-11",
+    "incomplete data"
+   ],
+   [
+    "2026-09-15",
+    "incomplete data"
+   ],
+   [
+    "2026-09-16",
+    "cached contract was not the nearest expiry (41 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-09-17",
+    "cached contract was not the nearest expiry (40 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-09-18",
+    "cached contract was not the nearest expiry (39 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-09-21",
+    "cached contract was not the nearest expiry (36 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-09-22",
+    "cached contract was not the nearest expiry (35 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-09-23",
+    "cached contract was not the nearest expiry (34 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-09-24",
+    "incomplete data"
+   ],
+   [
+    "2026-09-25",
+    "cached contract was not the nearest expiry (32 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-09-28",
+    "cached contract was not the nearest expiry (29 days to expiry); use --allow-far"
+   ],
+   [
+    "2026-09-29",
+    "cached contract was not the nearest expiry (28 days to expiry); use --allow-far"
+   ]
+  ],
+  "aggregate": {
+   "days": 1,
+   "failed_days": 0,
+   "total_pnl": 550.5,
+   "avg_per_day": 550.5,
+   "win_days": 1,
+   "loss_days": 0,
+   "flat_days": 0,
+   "best_day": 550.5,
+   "worst_day": 550.5,
+   "max_drawdown": 0.0,
+   "profit_factor": null,
+   "trades": 1,
+   "zero_trade_days": 0
+  },
+  "days": [
+   {
+    "day": "2026-10-16",
+    "trades": 1,
+    "gross_pnl": 550.5,
+    "win_rate": 1.0,
+    "max_drawdown": 0.0,
+    "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\bollinger_band_bounce_scalp_BANKNIFTY_2026-10-16_191831",
+    "verdict": "script-checked",
+    "findings": [],
+    "summary": {
+     "date": "2026-10-16",
+     "trades": 1,
+     "cycles_with_trades": 1,
+     "reversals": 0,
+     "gross_pnl": 550.5,
+     "net_pnl": 550.5,
+     "win_rate": 1.0,
+     "avg_win": 550.5,
+     "avg_loss": null,
+     "max_drawdown": 0.0,
+     "pnl_per_cycle": {
+      "0": 550.5
+     },
+     "stop_reasons": {
+      "middle band target hit": 1
+     },
+     "unclosed_positions": []
+    }
+   }
+  ],
+  "created": "2026-10-17T19:18:33"
+ }
+]

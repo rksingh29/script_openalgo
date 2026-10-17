@@ -1,0 +1,11 @@
+[opening_range_breakout_orb NIFTY] 4 day(s): 2026-10-13 .. 2026-10-16 | skipped 12: 2026-09-24 (incomplete data); 2026-09-25 (cached contract was not the ne); 2026-09-28 (incomplete data)
+
+===== opening_range_breakout_orb on NIFTY  2026-10-13 .. 2026-10-16  (code 8416edfea0) =====
+day          trades       P&L  win%   maxDD  check
+2026-10-13        1     11001   100       0  script-checked
+2026-10-14        1     -1320     0    1320  script-checked
+2026-10-15        1     10189   100       0  script-checked
+2026-10-16        1     -4778     0    4778  script-checked
+TOTAL  days 4 | trades 4 (0 days without a trade) | P&L +15093 | avg/day 3773.2 | win/loss/flat days 2/2/0 | worst day -4777.5 | max drawdown 4777.5 | profit factor 3.48
+Gross P&L, no slippage or charges. LOW SAMPLE (< 20 days).
+MULTIDAY_RESULT G:\Claude\pyscriptopenalgo\results\multiday\opening_range_breakout_orb_NIFTY_2026-10-13_2026-10-16_184004.json

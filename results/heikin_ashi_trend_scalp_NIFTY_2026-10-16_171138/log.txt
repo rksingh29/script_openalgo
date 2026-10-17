@@ -1,0 +1,40 @@
+2026-10-16 09:00:00 | Strategy HeikinAshiTrendScalp starting on NIFTY
+2026-10-16 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-10-16 11:35:00 | CE Heikin Ashi 2-candle run confirmed at bar 27 (11:30); entering
+2026-10-16 11:35:00 | ATM CE NIFTY19OCT2623100CE | lot 65 | expiry 19OCT26 | underlying_ltp 23121.7
+2026-10-16 11:35:01 | BUY NIFTY19OCT2623100CE qty 65 @ 109.05 | order SIM00001 | CE HA trend run | index 23121.70 stop 23090.68
+2026-10-16 11:35:01 | ENTER CE | index 23121.70 stop 23090.68 (0.13%) | trade 1/4
+2026-10-16 11:40:01 | Trailing stop (HA low) raised 23090.68 -> 23099.83
+2026-10-16 11:45:01 | Trailing stop (HA low) raised 23099.83 -> 23105.30
+2026-10-16 11:50:02 | SELL NIFTY19OCT2623100CE qty 65 @ 103.5 | order SIM00002 | HA colour flip against CE (streak 1)
+2026-10-16 11:50:02 | EXIT CE HA colour flip against CE (streak 1) | qty 65 @ 103.5 | pnl -361 | day P&L -361
+2026-10-16 12:40:02 | CE Heikin Ashi 2-candle run confirmed at bar 40 (12:35); entering
+2026-10-16 12:40:02 | ATM CE NIFTY19OCT2623150CE | lot 65 | expiry 19OCT26 | underlying_ltp 23133.35
+2026-10-16 12:40:03 | BUY NIFTY19OCT2623150CE qty 65 @ 87.45 | order SIM00003 | CE HA trend run | index 23133.35 stop 23107.67
+2026-10-16 12:40:03 | ENTER CE | index 23133.35 stop 23107.67 (0.11%) | trade 2/4
+2026-10-16 12:45:03 | Trailing stop (HA low) raised 23107.67 -> 23107.99
+2026-10-16 12:50:03 | Trailing stop (HA low) raised 23107.99 -> 23110.68
+2026-10-16 12:55:03 | Trailing stop (HA low) raised 23110.68 -> 23112.94
+2026-10-16 12:58:04 | SELL NIFTY19OCT2623150CE qty 65 @ 73.55 | order SIM00004 | stop hit (index 23111.90 <= 23112.94)
+2026-10-16 12:58:04 | EXIT CE stop hit (index 23111.90 <= 23112.94) | qty 65 @ 73.55 | pnl -904 | day P&L -1264
+2026-10-16 13:25:04 | CE Heikin Ashi 2-candle run confirmed at bar 49 (13:20); entering
+2026-10-16 13:25:04 | ATM CE NIFTY19OCT2623150CE | lot 65 | expiry 19OCT26 | underlying_ltp 23130.8
+2026-10-16 13:25:05 | BUY NIFTY19OCT2623150CE qty 65 @ 78.45 | order SIM00005 | CE HA trend run | index 23130.80 stop 23106.81
+2026-10-16 13:25:05 | ENTER CE | index 23130.80 stop 23106.81 (0.10%) | trade 3/4
+2026-10-16 13:30:05 | Trailing stop (HA low) raised 23106.81 -> 23110.99
+2026-10-16 13:40:05 | Trailing stop (HA low) raised 23110.99 -> 23117.33
+2026-10-16 13:45:06 | SELL NIFTY19OCT2623150CE qty 65 @ 78.2 | order SIM00006 | HA colour flip against CE (streak 1)
+2026-10-16 13:45:06 | EXIT CE HA colour flip against CE (streak 1) | qty 65 @ 78.2 | pnl -16 | day P&L -1281
+2026-10-16 14:15:06 | PE Heikin Ashi 2-candle run confirmed at bar 59 (14:10); entering
+2026-10-16 14:15:06 | ATM PE NIFTY19OCT2623100PE | lot 65 | expiry 19OCT26 | underlying_ltp 23111.15
+2026-10-16 14:15:07 | BUY NIFTY19OCT2623100PE qty 65 @ 93.05 | order SIM00007 | PE HA trend run | index 23111.15 stop 23128.96
+2026-10-16 14:15:07 | ENTER PE | index 23111.15 stop 23128.96 (0.08%) | trade 4/4
+2026-10-16 14:20:07 | Trailing stop (HA high) lowered 23128.96 -> 23125.05
+2026-10-16 14:25:07 | Trailing stop (HA high) lowered 23125.05 -> 23121.82
+2026-10-16 14:30:07 | Trailing stop (HA high) lowered 23121.82 -> 23113.55
+2026-10-16 14:35:07 | Trailing stop (HA high) lowered 23113.55 -> 23107.59
+2026-10-16 14:40:07 | Trailing stop (HA high) lowered 23107.59 -> 23101.96
+2026-10-16 14:45:08 | SELL NIFTY19OCT2623100PE qty 65 @ 93.55 | order SIM00008 | HA colour flip against PE (streak 1)
+2026-10-16 14:45:08 | EXIT PE HA colour flip against PE (streak 1) | qty 65 @ 93.55 | pnl +32 | day P&L -1248
+2026-10-16 15:15:08 | Square-off time reached; stopping for the day
+2026-10-16 15:15:08 | Done for the day. Trades 4 | day P&L -1248

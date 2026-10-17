@@ -1,0 +1,19 @@
+{
+ "date": "2026-10-15",
+ "trades": 3,
+ "cycles_with_trades": 1,
+ "reversals": 2,
+ "gross_pnl": -734.5,
+ "net_pnl": -734.5,
+ "win_rate": 0.333,
+ "avg_win": 429.0,
+ "avg_loss": -581.75,
+ "max_drawdown": 737.75,
+ "pnl_per_cycle": {
+  "0": -734.5
+ },
+ "stop_reasons": {
+  "HA colour flip against CE": 3
+ },
+ "unclosed_positions": []
+}

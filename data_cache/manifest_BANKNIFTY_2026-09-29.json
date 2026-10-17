@@ -1,0 +1,252 @@
+{
+ "instrument": "BANKNIFTY",
+ "date": "2026-09-29",
+ "expiry": "2026-10-27",
+ "lot_size": 30,
+ "strikes": [
+  53500,
+  53600,
+  53700,
+  53800,
+  53900,
+  54000,
+  54100,
+  54200,
+  54300,
+  54400,
+  54500,
+  54600,
+  54700
+ ],
+ "series": {
+  "BANKNIFTY": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2653500CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2653500PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2653600CE": {
+   "rows": 369,
+   "first": "09:21",
+   "last": "15:29",
+   "coverage": 0.984,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20"
+   ]
+  },
+  "BANKNIFTY27OCT2653600PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2653700CE": {
+   "rows": 370,
+   "first": "09:20",
+   "last": "15:29",
+   "coverage": 0.987,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19"
+   ]
+  },
+  "BANKNIFTY27OCT2653700PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2653800CE": {
+   "rows": 369,
+   "first": "09:21",
+   "last": "15:29",
+   "coverage": 0.984,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20"
+   ]
+  },
+  "BANKNIFTY27OCT2653800PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2653900CE": {
+   "rows": 369,
+   "first": "09:21",
+   "last": "15:29",
+   "coverage": 0.984,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20"
+   ]
+  },
+  "BANKNIFTY27OCT2653900PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654000CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654000PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654100CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654100PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654200CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654200PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654300CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654300PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654400CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654400PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654500CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654500PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654600CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654600PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654700CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2654700PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "DAILY": {
+   "rows": 91,
+   "last_before_day": "2026-09-28"
+  }
+ },
+ "issues": [],
+ "warnings": [],
+ "complete": true,
+ "created": "2026-10-17T18:16:03",
+ "days_to_expiry": 28,
+ "nearest": false,
+ "previous_expiry": "2026-09-29",
+ "backfilled": true,
+ "lot_size_note": "current lot size (history of lot changes not available)"
+}

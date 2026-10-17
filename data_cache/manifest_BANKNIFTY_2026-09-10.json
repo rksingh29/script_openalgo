@@ -1,0 +1,323 @@
+{
+ "instrument": "BANKNIFTY",
+ "date": "2026-09-10",
+ "expiry": "2026-10-27",
+ "lot_size": 30,
+ "strikes": [
+  56000,
+  56100,
+  56200,
+  56300,
+  56400,
+  56500,
+  56600,
+  56700,
+  56800
+ ],
+ "series": {
+  "BANKNIFTY": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656000CE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "BANKNIFTY27OCT2656000PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656100CE": {
+   "rows": 0,
+   "first": null,
+   "last": null,
+   "coverage": 0.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656100PE": {
+   "rows": 0,
+   "first": null,
+   "last": null,
+   "coverage": 0.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656200CE": {
+   "rows": 291,
+   "first": "10:39",
+   "last": "15:29",
+   "coverage": 0.776,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20",
+    "09:21",
+    "09:22",
+    "09:23",
+    "09:24",
+    "09:25",
+    "09:26",
+    "09:27",
+    "09:28",
+    "09:29",
+    "09:30",
+    "09:31",
+    "09:32",
+    "09:33",
+    "09:34",
+    "09:35",
+    "09:36",
+    "09:37",
+    "09:38",
+    "09:39",
+    "09:40",
+    "09:41",
+    "09:42",
+    "09:43",
+    "09:44",
+    "09:45",
+    "09:46",
+    "09:47",
+    "09:48",
+    "09:49",
+    "09:50",
+    "09:51",
+    "09:52",
+    "09:53",
+    "09:54",
+    "09:55",
+    "09:56",
+    "09:57",
+    "09:58",
+    "09:59",
+    "10:00",
+    "10:01",
+    "10:02",
+    "10:03",
+    "10:04",
+    "10:05",
+    "10:06",
+    "10:07",
+    "10:08",
+    "10:09",
+    "10:10",
+    "10:11",
+    "10:12",
+    "10:13",
+    "10:14"
+   ]
+  },
+  "BANKNIFTY27OCT2656200PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656300CE": {
+   "rows": 367,
+   "first": "09:23",
+   "last": "15:29",
+   "coverage": 0.979,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20",
+    "09:21",
+    "09:22"
+   ]
+  },
+  "BANKNIFTY27OCT2656300PE": {
+   "rows": 0,
+   "first": null,
+   "last": null,
+   "coverage": 0.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656400CE": {
+   "rows": 372,
+   "first": "09:18",
+   "last": "15:29",
+   "coverage": 0.992,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17"
+   ]
+  },
+  "BANKNIFTY27OCT2656400PE": {
+   "rows": 0,
+   "first": null,
+   "last": null,
+   "coverage": 0.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656500CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656500PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656600CE": {
+   "rows": 68,
+   "first": "14:22",
+   "last": "15:29",
+   "coverage": 0.181,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20",
+    "09:21",
+    "09:22",
+    "09:23",
+    "09:24",
+    "09:25",
+    "09:26",
+    "09:27",
+    "09:28",
+    "09:29",
+    "09:30",
+    "09:31",
+    "09:32",
+    "09:33",
+    "09:34",
+    "09:35",
+    "09:36",
+    "09:37",
+    "09:38",
+    "09:39",
+    "09:40",
+    "09:41",
+    "09:42",
+    "09:43",
+    "09:44",
+    "09:45",
+    "09:46",
+    "09:47",
+    "09:48",
+    "09:49",
+    "09:50",
+    "09:51",
+    "09:52",
+    "09:53",
+    "09:54",
+    "09:55",
+    "09:56",
+    "09:57",
+    "09:58",
+    "09:59",
+    "10:00",
+    "10:01",
+    "10:02",
+    "10:03",
+    "10:04",
+    "10:05",
+    "10:06",
+    "10:07",
+    "10:08",
+    "10:09",
+    "10:10",
+    "10:11",
+    "10:12",
+    "10:13",
+    "10:14"
+   ]
+  },
+  "BANKNIFTY27OCT2656600PE": {
+   "rows": 0,
+   "first": null,
+   "last": null,
+   "coverage": 0.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656700CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656700PE": {
+   "rows": 0,
+   "first": null,
+   "last": null,
+   "coverage": 0.0,
+   "gaps": []
+  },
+  "BANKNIFTY27OCT2656800CE": {
+   "rows": 369,
+   "first": "09:21",
+   "last": "15:29",
+   "coverage": 0.984,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20"
+   ]
+  },
+  "BANKNIFTY27OCT2656800PE": {
+   "rows": 372,
+   "first": "09:18",
+   "last": "15:29",
+   "coverage": 0.992,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17"
+   ]
+  },
+  "DAILY": {
+   "rows": 79,
+   "last_before_day": "2026-09-09"
+  }
+ },
+ "issues": [
+  "BANKNIFTY27OCT2656200CE: coverage 78%",
+  "BANKNIFTY27OCT2656300PE: no data",
+  "BANKNIFTY27OCT2656400PE: no data",
+  "BANKNIFTY27OCT2656600CE: coverage 18%",
+  "BANKNIFTY27OCT2656600PE: no data"
+ ],
+ "warnings": [
+  "BANKNIFTY27OCT2656100CE: no data (outer buffer strike)",
+  "BANKNIFTY27OCT2656100PE: no data (outer buffer strike)",
+  "BANKNIFTY27OCT2656700PE: no data (outer buffer strike)"
+ ],
+ "complete": false,
+ "created": "2026-10-17T18:15:44",
+ "days_to_expiry": 47,
+ "nearest": false,
+ "previous_expiry": "2026-09-29",
+ "backfilled": true,
+ "lot_size_note": "current lot size (history of lot changes not available)"
+}

@@ -1,0 +1,13 @@
+2026-10-15 09:00:00 | Strategy OpeningRangeBreakoutORB starting on NIFTY
+2026-10-15 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-10-15 09:20:00 | Only 0 prior day(s) of opening-range data (< 5); skipping wide-range filter
+2026-10-15 09:20:00 | Opening range set: high 22737.80 low 22637.40 width 100.40 (avg unknown, filter skipped)
+2026-10-15 09:30:00 | ATM CE NIFTY19OCT2622750CE | lot 65 | expiry 19OCT26 | underlying_ltp 22750.55
+2026-10-15 09:30:01 | BUY NIFTY19OCT2622750CE qty 65 @ 129.5 | order SIM00001 | CE ORB breakout | index 22750.55 stop 22637.40 target 22976.85
+2026-10-15 09:30:01 | ENTER CE | index 22750.55 stop 22637.40 (113.15 pts) target 22976.85 | trade 1/2
+2026-10-15 10:01:01 | TRAIL CE stop -> 22737.80 (1 x OR width)
+2026-10-15 11:29:01 | TRAIL CE stop -> 22838.20 (2 x OR width)
+2026-10-15 11:51:02 | SELL NIFTY19OCT2622750CE qty 65 @ 286.25 | order SIM00002 | target hit (index 22979.15 >= 22976.85)
+2026-10-15 11:51:02 | EXIT CE target hit (index 22979.15 >= 22976.85) | qty 65 @ 286.25 | pnl +10189 | day P&L +10189
+2026-10-15 15:15:02 | Square-off time reached; stopping for the day
+2026-10-15 15:15:02 | Done for the day. Trades 1 | day P&L +10189

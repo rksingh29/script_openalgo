@@ -1,0 +1,11 @@
+[camarilla_pivot_reversal_scalp NIFTY] 4 day(s): 2026-10-13 .. 2026-10-16 | skipped 12: 2026-09-24 (incomplete data); 2026-09-25 (cached contract was not the ne); 2026-09-28 (incomplete data)
+
+===== camarilla_pivot_reversal_scalp on NIFTY  2026-10-13 .. 2026-10-16  (code 4b4abb77f9) =====
+day          trades       P&L  win%   maxDD  check
+2026-10-13        0         0             0  script-checked
+2026-10-14        0         0             0  script-checked
+2026-10-15        0         0             0  script-checked
+2026-10-16        1     -1908     0    1908  script-checked
+TOTAL  days 4 | trades 1 (3 days without a trade) | P&L -1908 | avg/day -476.9 | win/loss/flat days 0/1/3 | worst day -1907.75 | max drawdown 1907.8 | profit factor 0.0
+Gross P&L, no slippage or charges. LOW SAMPLE (< 20 days).
+MULTIDAY_RESULT G:\Claude\pyscriptopenalgo\results\multiday\camarilla_pivot_reversal_scalp_NIFTY_2026-10-13_2026-10-16_182706.json

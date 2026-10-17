@@ -1,0 +1,22 @@
+2026-09-28 09:00:00 | Strategy InsideBarBreakoutScalp starting on BANKNIFTY
+2026-09-28 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-09-28 10:15:00 | Inside bar at bar 11 (10:10) inside mother bar 10 (high 54704.20 / low 54600.10); watching for breakout
+2026-09-28 10:25:00 | Bar 13 is another inside bar (2 so far); range tightening, still watching mother bar 10
+2026-09-28 10:35:00 | Bar 15 is another inside bar (3 so far); range tightening, still watching mother bar 10
+2026-09-28 10:40:00 | Bearish breakdown: bar 16 closed 54589.15 < mother low 54600.10 (inside bars seen: 3)
+2026-09-28 10:40:00 | ATM PE BANKNIFTY27OCT2654600PE | lot 30 | expiry 27OCT26 | underlying_ltp 54589.15
+2026-09-28 10:40:01 | BUY BANKNIFTY27OCT2654600PE qty 30 @ 787.0 | order SIM00001 | PE inside-bar breakout | index 54589.15 stop 54731.49 target 54583.85
+2026-09-28 10:40:01 | ENTER PE | index 54589.15 stop 54731.49 (0.26%) target 54583.85 (R:R 2.0) | trade 1/4
+2026-09-28 10:42:02 | SELL BANKNIFTY27OCT2654600PE qty 30 @ 790.1 | order SIM00002 | target hit (index 54566.35 <= 54583.85)
+2026-09-28 10:42:02 | EXIT PE target hit (index 54566.35 <= 54583.85) | qty 30 @ 790.1 | pnl +93 | day P&L +93
+2026-09-28 13:55:02 | Inside bar at bar 55 (13:50) inside mother bar 54 (high 54600.50 / low 54543.80); watching for breakout
+2026-09-28 14:00:02 | Bar 56 is another inside bar (2 so far); range tightening, still watching mother bar 54
+2026-09-28 14:05:02 | Bar 57 is another inside bar (3 so far); range tightening, still watching mother bar 54
+2026-09-28 14:20:02 | Bearish breakdown: bar 60 closed 54488.25 < mother low 54543.80 (inside bars seen: 3)
+2026-09-28 14:20:02 | ATM PE BANKNIFTY27OCT2654500PE | lot 30 | expiry 27OCT26 | underlying_ltp 54488.25
+2026-09-28 14:20:03 | BUY BANKNIFTY27OCT2654500PE qty 30 @ 780.05 | order SIM00003 | PE inside-bar breakout | index 54488.25 stop 54627.74 target 54474.30
+2026-09-28 14:20:03 | ENTER PE | index 54488.25 stop 54627.74 (0.26%) target 54474.30 (R:R 2.0) | trade 2/4
+2026-09-28 14:39:04 | SELL BANKNIFTY27OCT2654500PE qty 30 @ 794.9 | order SIM00004 | target hit (index 54457.55 <= 54474.30)
+2026-09-28 14:39:04 | EXIT PE target hit (index 54457.55 <= 54474.30) | qty 30 @ 794.9 | pnl +446 | day P&L +539
+2026-09-28 15:15:04 | Square-off time reached; stopping for the day
+2026-09-28 15:15:04 | Done for the day. Trades 2 | day P&L +539

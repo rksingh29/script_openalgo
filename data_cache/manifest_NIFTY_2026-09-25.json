@@ -1,0 +1,224 @@
+{
+ "instrument": "NIFTY",
+ "date": "2026-09-25",
+ "expiry": "2026-10-19",
+ "lot_size": 65,
+ "strikes": [
+  22900,
+  22950,
+  23000,
+  23050,
+  23100,
+  23150,
+  23200,
+  23250,
+  23300
+ ],
+ "series": {
+  "NIFTY": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622900CE": {
+   "rows": 0,
+   "first": null,
+   "last": null,
+   "coverage": 0.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622900PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622950CE": {
+   "rows": 0,
+   "first": null,
+   "last": null,
+   "coverage": 0.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622950PE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "NIFTY19OCT2623000CE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "NIFTY19OCT2623000PE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "NIFTY19OCT2623050CE": {
+   "rows": 366,
+   "first": "09:24",
+   "last": "15:29",
+   "coverage": 0.976,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20",
+    "09:21",
+    "09:22",
+    "09:23"
+   ]
+  },
+  "NIFTY19OCT2623050PE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "NIFTY19OCT2623100CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2623100PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2623150CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2623150PE": {
+   "rows": 349,
+   "first": "09:41",
+   "last": "15:29",
+   "coverage": 0.931,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20",
+    "09:21",
+    "09:22",
+    "09:23",
+    "09:24",
+    "09:25",
+    "09:26",
+    "09:27",
+    "09:28",
+    "09:29",
+    "09:30",
+    "09:31",
+    "09:32",
+    "09:33",
+    "09:34",
+    "09:35",
+    "09:36",
+    "09:37",
+    "09:38",
+    "09:39",
+    "09:40"
+   ]
+  },
+  "NIFTY19OCT2623200CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2623200PE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "NIFTY19OCT2623250CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2623250PE": {
+   "rows": 367,
+   "first": "09:23",
+   "last": "15:29",
+   "coverage": 0.979,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20",
+    "09:21",
+    "09:22"
+   ]
+  },
+  "NIFTY19OCT2623300CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2623300PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "DAILY": {
+   "rows": 89,
+   "last_before_day": "2026-09-24"
+  }
+ },
+ "issues": [],
+ "warnings": [
+  "NIFTY19OCT2622900CE: no data (outer buffer strike)",
+  "NIFTY19OCT2622950CE: no data (outer buffer strike)"
+ ],
+ "complete": true,
+ "created": "2026-10-17T18:07:38",
+ "days_to_expiry": 24,
+ "nearest": false,
+ "previous_expiry": "2026-10-12",
+ "backfilled": true,
+ "lot_size_note": "current lot size (history of lot changes not available)"
+}

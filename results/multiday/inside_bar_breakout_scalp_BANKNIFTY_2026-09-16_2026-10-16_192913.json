@@ -1,0 +1,678 @@
+{
+ "strategy": "inside_bar_breakout_scalp",
+ "instrument": "BANKNIFTY",
+ "from": "2026-09-16",
+ "to": "2026-10-16",
+ "allow_far": true,
+ "code_hash": "c87827574b",
+ "skipped": [
+  [
+   "2026-09-04",
+   "incomplete data"
+  ],
+  [
+   "2026-09-07",
+   "incomplete data"
+  ],
+  [
+   "2026-09-08",
+   "incomplete data"
+  ],
+  [
+   "2026-09-09",
+   "incomplete data"
+  ],
+  [
+   "2026-09-10",
+   "incomplete data"
+  ],
+  [
+   "2026-09-11",
+   "incomplete data"
+  ],
+  [
+   "2026-09-15",
+   "incomplete data"
+  ],
+  [
+   "2026-09-24",
+   "incomplete data"
+  ]
+ ],
+ "aggregate": {
+  "days": 21,
+  "failed_days": 0,
+  "total_pnl": 12265.5,
+  "avg_per_day": 584.1,
+  "win_days": 12,
+  "loss_days": 8,
+  "flat_days": 1,
+  "best_day": 6081.0,
+  "worst_day": -3877.5,
+  "max_drawdown": 8166.0,
+  "profit_factor": 2.02,
+  "trades": 39,
+  "zero_trade_days": 1
+ },
+ "days": [
+  {
+   "day": "2026-09-16",
+   "trades": 2,
+   "gross_pnl": 2466.0,
+   "win_rate": 0.5,
+   "max_drawdown": 366.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-09-16_192342",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-09-16",
+    "trades": 2,
+    "cycles_with_trades": 1,
+    "reversals": 1,
+    "gross_pnl": 2466.0,
+    "net_pnl": 2466.0,
+    "win_rate": 0.5,
+    "avg_win": 2832.0,
+    "avg_loss": -366.0,
+    "max_drawdown": 366.0,
+    "pnl_per_cycle": {
+     "0": 2466.0
+    },
+    "stop_reasons": {
+     "target hit": 1,
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-09-17",
+   "trades": 1,
+   "gross_pnl": -409.5,
+   "win_rate": 0.0,
+   "max_drawdown": 409.5,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-09-17_192338",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-09-17",
+    "trades": 1,
+    "cycles_with_trades": 1,
+    "reversals": 0,
+    "gross_pnl": -409.5,
+    "net_pnl": -409.5,
+    "win_rate": 0.0,
+    "avg_win": null,
+    "avg_loss": -409.5,
+    "max_drawdown": 409.5,
+    "pnl_per_cycle": {
+     "0": -409.5
+    },
+    "stop_reasons": {
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-09-18",
+   "trades": 2,
+   "gross_pnl": 3265.5,
+   "win_rate": 1.0,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-09-18_192341",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-09-18",
+    "trades": 2,
+    "cycles_with_trades": 1,
+    "reversals": 1,
+    "gross_pnl": 3265.5,
+    "net_pnl": 3265.5,
+    "win_rate": 1.0,
+    "avg_win": 1632.75,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {
+     "0": 3265.5
+    },
+    "stop_reasons": {
+     "target hit": 2
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-09-21",
+   "trades": 1,
+   "gross_pnl": 1014.0,
+   "win_rate": 1.0,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-09-21_192434",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-09-21",
+    "trades": 1,
+    "cycles_with_trades": 1,
+    "reversals": 0,
+    "gross_pnl": 1014.0,
+    "net_pnl": 1014.0,
+    "win_rate": 1.0,
+    "avg_win": 1014.0,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {
+     "0": 1014.0
+    },
+    "stop_reasons": {
+     "target hit": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-09-22",
+   "trades": 3,
+   "gross_pnl": 1035.0,
+   "win_rate": 1.0,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-09-22_192437",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-09-22",
+    "trades": 3,
+    "cycles_with_trades": 1,
+    "reversals": 2,
+    "gross_pnl": 1035.0,
+    "net_pnl": 1035.0,
+    "win_rate": 1.0,
+    "avg_win": 345.0,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {
+     "0": 1035.0
+    },
+    "stop_reasons": {
+     "target hit": 2,
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-09-23",
+   "trades": 2,
+   "gross_pnl": -66.0,
+   "win_rate": 0.5,
+   "max_drawdown": 366.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-09-23_192437",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-09-23",
+    "trades": 2,
+    "cycles_with_trades": 1,
+    "reversals": 1,
+    "gross_pnl": -66.0,
+    "net_pnl": -66.0,
+    "win_rate": 0.5,
+    "avg_win": 300.0,
+    "avg_loss": -366.0,
+    "max_drawdown": 366.0,
+    "pnl_per_cycle": {
+     "0": -66.0
+    },
+    "stop_reasons": {
+     "target hit": 1,
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-09-25",
+   "trades": 2,
+   "gross_pnl": -2038.5,
+   "win_rate": 0.5,
+   "max_drawdown": 2046.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-09-25_192530",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-09-25",
+    "trades": 2,
+    "cycles_with_trades": 1,
+    "reversals": 1,
+    "gross_pnl": -2038.5,
+    "net_pnl": -2038.5,
+    "win_rate": 0.5,
+    "avg_win": 7.5,
+    "avg_loss": -2046.0,
+    "max_drawdown": 2046.0,
+    "pnl_per_cycle": {
+     "0": -2038.5
+    },
+    "stop_reasons": {
+     "stop hit": 1,
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-09-28",
+   "trades": 2,
+   "gross_pnl": 538.5,
+   "win_rate": 1.0,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-09-28_192532",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-09-28",
+    "trades": 2,
+    "cycles_with_trades": 1,
+    "reversals": 1,
+    "gross_pnl": 538.5,
+    "net_pnl": 538.5,
+    "win_rate": 1.0,
+    "avg_win": 269.25,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {
+     "0": 538.5
+    },
+    "stop_reasons": {
+     "target hit": 2
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-09-29",
+   "trades": 2,
+   "gross_pnl": 6081.0,
+   "win_rate": 1.0,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-09-29_192532",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-09-29",
+    "trades": 2,
+    "cycles_with_trades": 1,
+    "reversals": 1,
+    "gross_pnl": 6081.0,
+    "net_pnl": 6081.0,
+    "win_rate": 1.0,
+    "avg_win": 3040.5,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {
+     "0": 6081.0
+    },
+    "stop_reasons": {
+     "target hit": 1,
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-09-30",
+   "trades": 3,
+   "gross_pnl": 5791.5,
+   "win_rate": 1.0,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-09-30_192625",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-09-30",
+    "trades": 3,
+    "cycles_with_trades": 1,
+    "reversals": 2,
+    "gross_pnl": 5791.5,
+    "net_pnl": 5791.5,
+    "win_rate": 1.0,
+    "avg_win": 1930.5,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {
+     "0": 5791.5
+    },
+    "stop_reasons": {
+     "target hit": 2,
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-01",
+   "trades": 1,
+   "gross_pnl": -3877.5,
+   "win_rate": 0.0,
+   "max_drawdown": 3877.5,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-10-01_192626",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-01",
+    "trades": 1,
+    "cycles_with_trades": 1,
+    "reversals": 0,
+    "gross_pnl": -3877.5,
+    "net_pnl": -3877.5,
+    "win_rate": 0.0,
+    "avg_win": null,
+    "avg_loss": -3877.5,
+    "max_drawdown": 3877.5,
+    "pnl_per_cycle": {
+     "0": -3877.5
+    },
+    "stop_reasons": {
+     "stop hit": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-05",
+   "trades": 2,
+   "gross_pnl": 918.0,
+   "win_rate": 1.0,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-10-05_192627",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-05",
+    "trades": 2,
+    "cycles_with_trades": 1,
+    "reversals": 1,
+    "gross_pnl": 918.0,
+    "net_pnl": 918.0,
+    "win_rate": 1.0,
+    "avg_win": 459.0,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {
+     "0": 918.0
+    },
+    "stop_reasons": {
+     "target hit": 1,
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-06",
+   "trades": 1,
+   "gross_pnl": 394.5,
+   "win_rate": 1.0,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-10-06_192721",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-06",
+    "trades": 1,
+    "cycles_with_trades": 1,
+    "reversals": 0,
+    "gross_pnl": 394.5,
+    "net_pnl": 394.5,
+    "win_rate": 1.0,
+    "avg_win": 394.5,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {
+     "0": 394.5
+    },
+    "stop_reasons": {
+     "target hit": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-07",
+   "trades": 0,
+   "gross_pnl": 0,
+   "win_rate": null,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-10-07_192719",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-07",
+    "trades": 0,
+    "cycles_with_trades": 0,
+    "reversals": 0,
+    "gross_pnl": 0,
+    "net_pnl": 0,
+    "win_rate": null,
+    "avg_win": null,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {},
+    "stop_reasons": {},
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-08",
+   "trades": 2,
+   "gross_pnl": -1179.0,
+   "win_rate": 0.5,
+   "max_drawdown": 1677.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-10-08_192724",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-08",
+    "trades": 2,
+    "cycles_with_trades": 1,
+    "reversals": 1,
+    "gross_pnl": -1179.0,
+    "net_pnl": -1179.0,
+    "win_rate": 0.5,
+    "avg_win": 498.0,
+    "avg_loss": -1677.0,
+    "max_drawdown": 1677.0,
+    "pnl_per_cycle": {
+     "0": -1179.0
+    },
+    "stop_reasons": {
+     "stop hit": 1,
+     "target hit": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-09",
+   "trades": 4,
+   "gross_pnl": -358.5,
+   "win_rate": 0.75,
+   "max_drawdown": 1684.5,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-10-09_192811",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-09",
+    "trades": 4,
+    "cycles_with_trades": 1,
+    "reversals": 3,
+    "gross_pnl": -358.5,
+    "net_pnl": -358.5,
+    "win_rate": 0.75,
+    "avg_win": 442.0,
+    "avg_loss": -1684.5,
+    "max_drawdown": 1684.5,
+    "pnl_per_cycle": {
+     "0": -358.5
+    },
+    "stop_reasons": {
+     "stop hit": 1,
+     "target hit": 2,
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-12",
+   "trades": 1,
+   "gross_pnl": -1788.0,
+   "win_rate": 0.0,
+   "max_drawdown": 1788.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-10-12_192813",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-12",
+    "trades": 1,
+    "cycles_with_trades": 1,
+    "reversals": 0,
+    "gross_pnl": -1788.0,
+    "net_pnl": -1788.0,
+    "win_rate": 0.0,
+    "avg_win": null,
+    "avg_loss": -1788.0,
+    "max_drawdown": 1788.0,
+    "pnl_per_cycle": {
+     "0": -1788.0
+    },
+    "stop_reasons": {
+     "stop hit": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-13",
+   "trades": 1,
+   "gross_pnl": -2275.5,
+   "win_rate": 0.0,
+   "max_drawdown": 2275.5,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-10-13_192820",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-13",
+    "trades": 1,
+    "cycles_with_trades": 1,
+    "reversals": 0,
+    "gross_pnl": -2275.5,
+    "net_pnl": -2275.5,
+    "win_rate": 0.0,
+    "avg_win": null,
+    "avg_loss": -2275.5,
+    "max_drawdown": 2275.5,
+    "pnl_per_cycle": {
+     "0": -2275.5
+    },
+    "stop_reasons": {
+     "stop hit": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-14",
+   "trades": 3,
+   "gross_pnl": 528.0,
+   "win_rate": 0.333,
+   "max_drawdown": 1681.5,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-10-14_192908",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-14",
+    "trades": 3,
+    "cycles_with_trades": 1,
+    "reversals": 2,
+    "gross_pnl": 528.0,
+    "net_pnl": 528.0,
+    "win_rate": 0.333,
+    "avg_win": 3531.0,
+    "avg_loss": -1501.5,
+    "max_drawdown": 1681.5,
+    "pnl_per_cycle": {
+     "0": 528.0
+    },
+    "stop_reasons": {
+     "stop hit": 1,
+     "target hit": 1,
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-15",
+   "trades": 3,
+   "gross_pnl": 2175.0,
+   "win_rate": 1.0,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-10-15_192909",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-15",
+    "trades": 3,
+    "cycles_with_trades": 1,
+    "reversals": 2,
+    "gross_pnl": 2175.0,
+    "net_pnl": 2175.0,
+    "win_rate": 1.0,
+    "avg_win": 725.0,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {
+     "0": 2175.0
+    },
+    "stop_reasons": {
+     "target hit": 2,
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  },
+  {
+   "day": "2026-10-16",
+   "trades": 1,
+   "gross_pnl": 51.0,
+   "win_rate": 1.0,
+   "max_drawdown": 0.0,
+   "result_dir": "G:\\Claude\\pyscriptopenalgo\\results\\inside_bar_breakout_scalp_BANKNIFTY_2026-10-16_192912",
+   "verdict": "script-checked",
+   "findings": [],
+   "summary": {
+    "date": "2026-10-16",
+    "trades": 1,
+    "cycles_with_trades": 1,
+    "reversals": 0,
+    "gross_pnl": 51.0,
+    "net_pnl": 51.0,
+    "win_rate": 1.0,
+    "avg_win": 51.0,
+    "avg_loss": null,
+    "max_drawdown": 0.0,
+    "pnl_per_cycle": {
+     "0": 51.0
+    },
+    "stop_reasons": {
+     "square-off time": 1
+    },
+    "unclosed_positions": []
+   }
+  }
+ ],
+ "created": "2026-10-17T19:29:13"
+}

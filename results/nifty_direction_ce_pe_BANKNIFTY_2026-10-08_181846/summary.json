@@ -1,0 +1,19 @@
+{
+ "date": "2026-10-08",
+ "trades": 2,
+ "cycles_with_trades": 1,
+ "reversals": 1,
+ "gross_pnl": 1005.0,
+ "net_pnl": 1005.0,
+ "win_rate": 0.5,
+ "avg_win": 6762.0,
+ "avg_loss": -5757.0,
+ "max_drawdown": 5757.0,
+ "pnl_per_cycle": {
+  "1": 1005.0
+ },
+ "stop_reasons": {
+  "profit target hit": 1
+ },
+ "unclosed_positions": []
+}

@@ -1,0 +1,24 @@
+PROMPT:
+Review strategy nifty_direction_ce_pe.py and backtest_nifty_direction_ce_pe.py. Latest results: G:\Claude\pyscriptopenalgo\results\nifty_direction_ce_pe_2026-10-16_113410. Date 2026-10-16.
+
+IMPORTANT: your final message MUST end with the JSON result object described in your instructions.
+
+EXIT 0
+
+OUTPUT:
+The review came back clean. Summary:
+
+**Verdict: PASS â€” trust the results.**
+
+- **Replay integrity**: Backtest imports and runs the real `Strategy` class (`backtest_nifty_direction_ce_pe.py:14,46`), doesn't reimplement logic.
+- **Contract**: One low-severity nit â€” `log()` in `nifty_direction_ce_pe.py:62` calls `datetime.now()` directly instead of through the injected clock, which technically violates the "no bare `datetime.now()`" rule. It's neutralized in practice because the backtest harness monkeypatches `strat.log` before instantiation, and `log.txt` confirms all timestamps are sim-time. Worth cleaning up but no functional impact.
+- **Fake client coverage**: Strategy only calls allowed API surface (`quotes`, `expiry`, `optionsymbol`, `placeorder`, `orderstatus`, `analyzerstatus`), all implemented correctly in `fake_client.py`.
+- **No lookahead**: `fake_client.py:34` cuts data at `clock.now() - 1min`, so it only ever sees the last completed bar â€” verified by code inspection.
+- **Data gate**: `manifest_2026-10-16.json` shows `complete: true`, all 21 series fully populated, no gaps.
+- **P&L sanity**: Trade log reconciles exactly â€” 3 trades summing to -692.25 gross P&L matching `summary.json`; exit reasons (profit target, max-loss cap, reversal-loss) all match the strategy's own thresholds and logged reasoning; strike selection (22950, 23150) matches nearest-50 to spot at entry; day stopped correctly at the 14:30 new-entry cutoff.
+- **Minor caveat**: the reviewer couldn't execute Python in its sandbox to byte-verify a couple of parquet bar closes independently â€” it confirmed correctness via code-path inspection and internal arithmetic consistency instead, which is solid but not a from-scratch recompute. If you want that extra level of certainty, I can run a quick independent check now.
+
+One cosmetic fix I'd suggest: have `log()` take the injected clock instead of calling `datetime.now()` directly, so correctness doesn't depend on the backtest remembering to monkeypatch it. Want me to make that change?
+
+
+STDERR:

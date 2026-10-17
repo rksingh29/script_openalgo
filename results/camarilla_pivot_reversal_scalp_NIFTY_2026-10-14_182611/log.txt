@@ -1,0 +1,6 @@
+2026-10-14 09:00:00 | Strategy CamarillaPivotReversalScalp starting on NIFTY
+2026-10-14 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-10-14 09:15:00 | Prior day H 22721.95 L 22288.45 C 22721.95 -> R4 22960.38 R3 22841.16 Pivot 22577.45 S3 22602.74 S4 22483.53
+2026-10-14 13:45:00 | S3 reversal at bar 53 (13:40) dropped: lower wick ratio 0.09 < 0.4
+2026-10-14 15:15:00 | Square-off time reached; stopping for the day
+2026-10-14 15:15:00 | Done for the day. Trades 0 | day P&L +0

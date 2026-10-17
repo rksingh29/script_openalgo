@@ -1,0 +1,261 @@
+{
+ "instrument": "NIFTY",
+ "date": "2026-10-08",
+ "expiry": "2026-10-19",
+ "lot_size": 65,
+ "strikes": [
+  22050,
+  22100,
+  22150,
+  22200,
+  22250,
+  22300,
+  22350,
+  22400,
+  22450,
+  22500,
+  22550,
+  22600,
+  22650,
+  22700
+ ],
+ "series": {
+  "NIFTY": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622050CE": {
+   "rows": 361,
+   "first": "09:29",
+   "last": "15:29",
+   "coverage": 0.963,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17",
+    "09:18",
+    "09:19",
+    "09:20",
+    "09:21",
+    "09:22",
+    "09:23",
+    "09:24",
+    "09:25",
+    "09:26",
+    "09:27",
+    "09:28"
+   ]
+  },
+  "NIFTY19OCT2622050PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622100CE": {
+   "rows": 372,
+   "first": "09:18",
+   "last": "15:29",
+   "coverage": 0.992,
+   "gaps": [
+    "09:15",
+    "09:16",
+    "09:17"
+   ]
+  },
+  "NIFTY19OCT2622100PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622150CE": {
+   "rows": 374,
+   "first": "09:16",
+   "last": "15:29",
+   "coverage": 0.997,
+   "gaps": [
+    "09:15"
+   ]
+  },
+  "NIFTY19OCT2622150PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622200CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622200PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622250CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622250PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622300CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622300PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622350CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622350PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622400CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622400PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622450CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622450PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622500CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622500PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622550CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622550PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622600CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622600PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622650CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622650PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622700CE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "NIFTY19OCT2622700PE": {
+   "rows": 375,
+   "first": "09:15",
+   "last": "15:29",
+   "coverage": 1.0,
+   "gaps": []
+  },
+  "DAILY": {
+   "rows": 97,
+   "last_before_day": "2026-10-07"
+  }
+ },
+ "issues": [],
+ "warnings": [],
+ "complete": true,
+ "created": "2026-10-17T18:07:49",
+ "days_to_expiry": 11,
+ "nearest": false,
+ "previous_expiry": "2026-10-12",
+ "backfilled": true,
+ "lot_size_note": "current lot size (history of lot changes not available)"
+}

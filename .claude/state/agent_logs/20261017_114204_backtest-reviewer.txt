@@ -1,0 +1,28 @@
+PROMPT:
+Review strategy nifty_direction_ce_pe.py and backtest_nifty_direction_ce_pe.py. Latest results: G:\Claude\pyscriptopenalgo\results\nifty_direction_ce_pe_2026-10-16_113410. Date 2026-10-16.
+
+IMPORTANT: your final message MUST end with the JSON result object described in your instructions.
+
+EXIT 0
+
+OUTPUT:
+Review complete â€” no high/medium issues; the backtest faithfully replays the real `Strategy` with no lookahead bias.
+
+**Confirmed clean:**
+- Backtest imports and runs the real `Strategy` class directly â€” no duplicated logic.
+- `FakeClient._price()` only returns the last **fully completed** bar (cutoff = sim-time âˆ’ 1min), used identically for quotes, ATM-strike computation, and fills â€” no lookahead.
+- All client methods the strategy calls (`quotes`, `expiry`, `optionsymbol`, `placeorder`, `orderstatus`, `analyzerstatus`) are in the allowed surface and implemented by `FakeClient` with matching shapes.
+- P&L re-derived by hand from `trades.csv` matches `summary.json` exactly: cycle 1 +1855.75 (profit target), cycle 2 âˆ’2548.0 (reversal fired correctly on rising PE readings, then max-loss cap hit) â†’ day âˆ’692.25. Day stopped on the 14:30 cut-off, correctly before `MAX_CYCLES`/`DAILY_MAX_LOSS`.
+- Data gate (`manifest complete:true`) verified present and enforced twice.
+
+**Three low-severity findings, none affecting this run's results:**
+1. `nifty_direction_ce_pe.py:62` â€” the module-level `log()` calls `datetime.now()` directly, a literal contract violation (rule: no `datetime.now()` outside clock/sleeper/client). It's harmless today only because the backtest monkey-patches `strat.log = sim_log`; if that patch were ever forgotten, logs would silently show wall-clock time instead of sim time.
+2. `nifty_direction_ce_pe.py:263-264` â€” the "opposite leg" for a reversal is inferred from set membership (`pe_sym if ce_sym in holding else ce_sym`), which breaks if `MAX_REVERSALS` is ever raised above 1 (both legs would already be in `holding`). Not triggered since `MAX_REVERSALS=1`.
+3. The 60s P&L poll means loss caps can overshoot â€” observed directly: cycle 2's cap was 2500 but exit landed at 2548. This is inherent to the documented "checked every 60s" design, not a bug, just worth knowing it's a soft cap.
+
+**Minor housekeeping:** `knowledge/strategy_registry.md` still points at older run-ids rather than this one (same result, âˆ’692.25).
+
+Want me to fix finding #1 (route logging through an injected logger instead of the free `log()` function) and update the registry, or leave it as-is since it's cosmetic and the backtest already neutralizes it?
+
+
+STDERR:

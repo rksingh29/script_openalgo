@@ -1,0 +1,11 @@
+[supertrend_flip_scalp NIFTY] 4 day(s): 2026-10-13 .. 2026-10-16 | skipped 12: 2026-09-24 (incomplete data); 2026-09-25 (cached contract was not the ne); 2026-09-28 (incomplete data)
+
+===== supertrend_flip_scalp on NIFTY  2026-10-13 .. 2026-10-16  (code 13f3c720bf) =====
+day          trades       P&L  win%   maxDD  check
+2026-10-13        0         0             0  script-checked
+2026-10-14        0         0             0  script-checked
+2026-10-15        0         0             0  script-checked
+2026-10-16        0         0             0  script-checked
+TOTAL  days 4 | trades 0 (4 days without a trade) | P&L +0 | avg/day 0.0 | win/loss/flat days 0/0/4 | worst day 0 | max drawdown 0.0 | profit factor None
+Gross P&L, no slippage or charges. LOW SAMPLE (< 20 days).
+MULTIDAY_RESULT G:\Claude\pyscriptopenalgo\results\multiday\supertrend_flip_scalp_NIFTY_2026-10-13_2026-10-16_183749.json

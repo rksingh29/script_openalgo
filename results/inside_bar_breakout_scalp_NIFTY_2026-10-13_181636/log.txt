@@ -1,0 +1,19 @@
+2026-10-13 09:00:00 | Strategy InsideBarBreakoutScalp starting on NIFTY
+2026-10-13 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
+2026-10-13 10:45:00 | Inside bar at bar 17 (10:40) inside mother bar 16 (high 22517.10 / low 22485.95); watching for breakout
+2026-10-13 10:50:00 | Bullish breakout: bar 18 closed 22524.25 > mother high 22517.10 (inside bars seen: 1)
+2026-10-13 10:50:00 | ATM CE NIFTY19OCT2622500CE | lot 65 | expiry 19OCT26 | underlying_ltp 22524.25
+2026-10-13 10:50:01 | BUY NIFTY19OCT2622500CE qty 65 @ 206.2 | order SIM00001 | CE inside-bar breakout | index 22524.25 stop 22474.69 target 22581.15
+2026-10-13 10:50:01 | ENTER CE | index 22524.25 stop 22474.69 (0.22%) target 22581.15 (R:R 2.0) | trade 1/4
+2026-10-13 14:08:02 | SELL NIFTY19OCT2622500CE qty 65 @ 226.8 | order SIM00002 | target hit (index 22581.60 >= 22581.15)
+2026-10-13 14:08:02 | EXIT CE target hit (index 22581.60 >= 22581.15) | qty 65 @ 226.8 | pnl +1339 | day P&L +1339
+2026-10-13 14:25:02 | Inside bar at bar 61 (14:20) inside mother bar 60 (high 22605.65 / low 22574.45); watching for breakout
+2026-10-13 14:30:02 | Bar 62 is another inside bar (2 so far); range tightening, still watching mother bar 60
+2026-10-13 14:35:02 | Bullish breakout: bar 63 closed 22634.35 > mother high 22605.65 (inside bars seen: 2)
+2026-10-13 14:35:02 | ATM CE NIFTY19OCT2622650CE | lot 65 | expiry 19OCT26 | underlying_ltp 22634.35
+2026-10-13 14:35:03 | BUY NIFTY19OCT2622650CE qty 65 @ 172.8 | order SIM00003 | CE inside-bar breakout | index 22634.35 stop 22563.13 target 22635.95
+2026-10-13 14:35:03 | ENTER CE | index 22634.35 stop 22563.13 (0.31%) target 22635.95 (R:R 2.0) | trade 2/4
+2026-10-13 14:36:04 | SELL NIFTY19OCT2622650CE qty 65 @ 177.8 | order SIM00004 | target hit (index 22637.15 >= 22635.95)
+2026-10-13 14:36:04 | EXIT CE target hit (index 22637.15 >= 22635.95) | qty 65 @ 177.8 | pnl +325 | day P&L +1664
+2026-10-13 15:15:04 | Square-off time reached; stopping for the day
+2026-10-13 15:15:04 | Done for the day. Trades 2 | day P&L +1664

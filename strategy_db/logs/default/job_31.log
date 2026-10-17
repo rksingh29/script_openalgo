@@ -1,0 +1,11 @@
+[inside_bar_breakout_scalp NIFTY] 4 day(s): 2026-10-13 .. 2026-10-16 | skipped 12: 2026-09-24 (incomplete data); 2026-09-25 (cached contract was not the ne); 2026-09-28 (incomplete data)
+
+===== inside_bar_breakout_scalp on NIFTY  2026-10-13 .. 2026-10-16  (code c87827574b) =====
+day          trades       P&L  win%   maxDD  check
+2026-10-13        2      1664   100       0  script-checked
+2026-10-14        2      3175   100       0  script-checked
+2026-10-15        3      -816    67    1963  script-checked
+2026-10-16        1     -1930     0    1930  script-checked
+TOTAL  days 4 | trades 8 (0 days without a trade) | P&L +2093 | avg/day 523.2 | win/loss/flat days 2/2/0 | worst day -1930.5 | max drawdown 2746.2 | profit factor 1.76
+Gross P&L, no slippage or charges. LOW SAMPLE (< 20 days).
+MULTIDAY_RESULT G:\Claude\pyscriptopenalgo\results\multiday\inside_bar_breakout_scalp_NIFTY_2026-10-13_2026-10-16_181747.json

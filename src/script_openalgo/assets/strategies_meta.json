@@ -1,0 +1,917 @@
+{
+ "nifty_direction_ce_pe": {
+  "name": "Nifty Direction CE/PE",
+  "aliases": [],
+  "family": "momentum",
+  "spec": {
+   "name": "Nifty Direction CE/PE",
+   "family": "momentum",
+   "timeframe": "5m",
+   "indicators": [
+    "option premium readings"
+   ],
+   "entry_trigger": "3 rising readings",
+   "exit_type": "target/stop/reversal",
+   "entry_long": "ATM CE premium rises 3 consecutive 5-min readings while PE does not",
+   "entry_short": "ATM PE premium rises 3 consecutive readings while CE does not",
+   "notes": "User's own strategy; see nifty_direction_ce_pe.py docstring"
+  },
+  "signature": "user-nifty_direction_ce_pe",
+  "sources": [],
+  "popularity": 3,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "both-sides",
+   "options-buying",
+   "momentum",
+   "nifty",
+   "banknifty"
+  ]
+ },
+ "vwap_reclaim_scalp": {
+  "name": "VWAP Reclaim Scalp",
+  "aliases": [
+   "VWAP Quick Reclaim",
+   "VWAP Reclaim Setup",
+   "VWAP Reclaim Trading Strategy"
+  ],
+  "family": "vwap",
+  "spec": {
+   "name": "VWAP Reclaim Scalp",
+   "aliases": [
+    "VWAP Quick Reclaim",
+    "VWAP Reclaim Setup",
+    "VWAP Reclaim Trading Strategy"
+   ],
+   "family": "vwap",
+   "timeframe": "5m",
+   "indicators": [
+    "vwap",
+    "volume",
+    "rsi"
+   ],
+   "entry_trigger": "vwap_reclaim",
+   "exit_type": "fixed_rr",
+   "entry_long": "Price must have been trading above session VWAP for a sustained period (sources use roughly 45 minutes, or at least the prior 15-45 minutes), then dips below VWAP for 1-3 candles only (a shallow pullback, not a trend change). Enter when a full candle closes back above VWAP with its body (not just a wick) above the VWAP line, and volume on this reclaim candle is noticeably higher than the prior 1-2 candles (sources cite 1.5x-2x average volume). Optional confirmation: RSI(9) was in the 40-58 zone during the dip (not oversold/broken). Conservative variant: instead of entering on the reclaim candle close, wait for one more candle where price pulls back to retest VWAP from above and holds (does not close back below VWAP), then enter on that bounce for a tighter stop.",
+   "entry_short": "Mirror of the long side: price trading below VWAP for a sustained period, a brief rally pokes above VWAP for 1-3 candles, then a full candle closes back below VWAP with body below the line and volume higher than the prior candles (a 'VWAP rejection/breakdown reclaim'). Enter short (ATM PE) on that close, or on a retest bounce off VWAP from below that fails to reclaim it.",
+   "exit": "Fixed reward:risk management: first target at 2x the initial stop distance; once hit, move stop to breakeven and trail the remainder toward the session high/premarket high (for longs) or session low (for shorts) as a second target. Hard invalidation: exit immediately, regardless of P&L, if a candle closes back on the wrong side of VWAP (reclaim/rejection failed).",
+   "stop": "Below the low of the deepest dip candle (long) or above the high of the rally candle (short), capped at roughly 0.2-0.5% away from entry per sources; alternatively just below/above the low/high of the reclaim candle itself, whichever is tighter. If the required stop distance exceeds ~0.5% of price, skip the trade.",
+   "target": "Primary target = 2x the stop-loss distance (2:1 reward:risk minimum). Secondary/runner target = session high or premarket high for longs (session low/premarket low for shorts); scale out partial size at the first target and trail the rest.",
+   "filters": "Only trade in the direction of the prevailing VWAP trend for the reclaim variant (price above VWAP for 45+ min before taking a long reclaim, below for 45+ min before a short). Best reliability windows cited: roughly 09:50-11:30 local session time (and a secondary medium-reliability window in early afternoon); avoid the first 15-30 minutes of the session and the low-liquidity midday lull. Needs visible/relative volume confirmation on the reclaim candle.",
+   "params": {
+    "a": 1
+   },
+   "popularity": 3,
+   "data_needs": "ohlcv_5m",
+   "testable": "adapt",
+   "testable_reason": "Core VWAP reclaim/rejection/volume logic is computable from 5m OHLCV + volume for the index. The RSI confirmation zone and premarket-high target need adaptation (NIFTY/BANKNIFTY options do not have a traditional US-style 'premarket', so premarket-high target is replaced with prior day's high/low or the day's high-so-far); relative/average volume thresholds need recalibration to index futures/underlying volume since option volume is noisy.",
+   "sources": [
+    {
+     "url": "https://www.kotakneo.com/stockshaala/scalping-trading-strategies/vwap-quick-reclaim-scalping/",
+     "title": "VWAP Quick Reclaim Scalping",
+     "type": "broker_education"
+    },
+    {
+     "url": "https://www.sahi.com/blogs/vwap-scalping-strategy-for-nifty-and-bank-nifty-3-setups-that-work",
+     "title": "VWAP Scalping Strategy for Nifty: 3 Setups That Work",
+     "type": "broker_education"
+    },
+    {
+     "url": "https://stocksetups.com/articles/vwap-reclaim-setup-intraday-reversal-signal",
+     "title": "The VWAP Reclaim Setup: Trade a Key Intraday Reversal Signal",
+     "type": "blog"
+    }
+   ],
+   "notes": "edited by test"
+  },
+  "signature": "464d319aca8cac32",
+  "sources": [
+   {
+    "url": "https://www.kotakneo.com/stockshaala/scalping-trading-strategies/vwap-quick-reclaim-scalping/",
+    "title": "VWAP Quick Reclaim Scalping",
+    "type": "broker_education"
+   },
+   {
+    "url": "https://www.sahi.com/blogs/vwap-scalping-strategy-for-nifty-and-bank-nifty-3-setups-that-work",
+    "title": "VWAP Scalping Strategy for Nifty: 3 Setups That Work",
+    "type": "broker_education"
+   },
+   {
+    "url": "https://stocksetups.com/articles/vwap-reclaim-setup-intraday-reversal-signal",
+    "title": "The VWAP Reclaim Setup: Trade a Key Intraday Reversal Signal",
+    "type": "blog"
+   }
+  ],
+  "popularity": 3,
+  "data_needs": "ohlcv_5m",
+  "testable": "adapt",
+  "testable_reason": "Core VWAP reclaim/rejection/volume logic is computable from 5m OHLCV + volume for the index. The RSI confirmation zone and premarket-high target need adaptation (NIFTY/BANKNIFTY options do not have a traditional US-style 'premarket', so premarket-high target is replaced with prior day's high/low or the day's high-so-far); relative/average volume thresholds need recalibration to index futures/underlying volume since option volume is noisy.",
+  "origin": "researcher",
+  "tags": [
+   "both-sides",
+   "vwap",
+   "scalp"
+  ]
+ },
+ "opening_range_breakout_orb": {
+  "name": "Opening Range Breakout (ORB)",
+  "aliases": [
+   "ORB Scalp",
+   "5-Minute Opening Range Breakout"
+  ],
+  "family": "opening range",
+  "spec": {
+   "name": "Opening Range Breakout (ORB)",
+   "aliases": [
+    "ORB Scalp",
+    "5-Minute Opening Range Breakout"
+   ],
+   "family": "opening_range",
+   "timeframe": "5m",
+   "indicators": [
+    "range_high_low"
+   ],
+   "entry_trigger": "orb_break",
+   "exit_type": "fixed_rr",
+   "entry_long": "Mark the high and low of the first N minutes after market open (default: first 5-minute candle, 09:15-09:20 IST). Go long when a subsequent 5-minute candle CLOSES above the opening-range high (not just an intrabar wick through it).",
+   "entry_short": "Go short when a subsequent 5-minute candle CLOSES below the opening-range low.",
+   "exit": "Exit at target or stop, whichever hit first; optionally trail stop by the opening-range width once price has moved one range-width in favor.",
+   "stop": "For longs, stop just below the opening-range low; for shorts, stop just above the opening-range high.",
+   "target": "Fixed reward:risk of 1:1 or 2:1 measured from entry and the initial stop distance (range width).",
+   "filters": "Only one breakout trade per side per day (first valid breakout only); skip trading if the opening range is unusually wide (e.g. > 1.5x the 20-day average opening range) since risk becomes too large.",
+   "params": {
+    "range_minutes": 5,
+    "reward_risk": 2,
+    "max_trades_per_day": 2
+   },
+   "popularity": 5,
+   "data_needs": "ohlcv_5m",
+   "testable": "yes",
+   "sources": [
+    {
+     "url": "https://www.luxalgo.com/blog/opening-range-breakout-orb-trading-strategy-how-it-works/",
+     "title": "Opening Range Breakout (ORB) Trading Strategy: How it Works",
+     "type": "blog"
+    },
+    {
+     "url": "https://tradethatswing.com/opening-range-breakout-strategy-up-400-this-year/",
+     "title": "Opening Range Breakout Strategy (Strict Rules)",
+     "type": "blog"
+    },
+    {
+     "url": "https://www.litefinance.org/blog/for-beginners/trading-strategies/opening-range-breakout-strategy/",
+     "title": "Opening Range Breakout (ORB) Strategy: Rules, Indicator & Success Rate",
+     "type": "broker_education"
+    }
+   ]
+  },
+  "signature": "1866ac021abe44ed",
+  "sources": [
+   {
+    "url": "https://www.luxalgo.com/blog/opening-range-breakout-orb-trading-strategy-how-it-works/",
+    "title": "Opening Range Breakout (ORB) Trading Strategy: How it Works",
+    "type": "blog"
+   },
+   {
+    "url": "https://tradethatswing.com/opening-range-breakout-strategy-up-400-this-year/",
+    "title": "Opening Range Breakout Strategy (Strict Rules)",
+    "type": "blog"
+   },
+   {
+    "url": "https://www.litefinance.org/blog/for-beginners/trading-strategies/opening-range-breakout-strategy/",
+    "title": "Opening Range Breakout (ORB) Strategy: Rules, Indicator & Success Rate",
+    "type": "broker_education"
+   }
+  ],
+  "popularity": 5,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "researcher",
+  "tags": [
+   "opening-range",
+   "researcher"
+  ]
+ },
+ "supertrend_flip_scalp": {
+  "name": "Supertrend Flip Scalp",
+  "aliases": [
+   "Supertrend Trailing Scalp"
+  ],
+  "family": "supertrend",
+  "spec": {
+   "name": "Supertrend Flip Scalp",
+   "aliases": [
+    "Supertrend Trailing Scalp"
+   ],
+   "family": "supertrend",
+   "timeframe": "5m",
+   "indicators": [
+    "supertrend",
+    "atr"
+   ],
+   "entry_trigger": "supertrend_flip",
+   "exit_type": "trailing",
+   "entry_long": "Compute Supertrend with ATR period 7-10 and multiplier 2-3 on 5-minute candles. Go long on the candle close where the Supertrend flips from red (above price) to green (below price), i.e. price closes above the Supertrend line for the first time after being below it.",
+   "entry_short": "Go short on the candle close where the Supertrend flips from green to red, i.e. price closes below the Supertrend line for the first time after being above it.",
+   "exit": "Exit (and reverse bias) when price closes back through the Supertrend line on the opposite side - the line itself acts as the exit signal, no separate target.",
+   "stop": "Initial stop at the Supertrend line value at entry; trail the stop along the Supertrend line as it moves in the trade's favor.",
+   "target": "No fixed target; ride the trend until the Supertrend line flips (trailing exit).",
+   "filters": "Works best on trending days; many sources pair it with a momentum filter (e.g. only take Supertrend signals aligned with a higher-timeframe trend) to reduce whipsaws in choppy conditions.",
+   "params": {
+    "atr_period": 10,
+    "multiplier": 3
+   },
+   "popularity": 4,
+   "data_needs": "ohlcv_5m",
+   "testable": "yes",
+   "sources": [
+    {
+     "url": "https://trendspider.com/learning-center/supertrend-indicator-a-comprehensive-guide/",
+     "title": "SuperTrend Indicator: Comprehensive Guide to Signals & Settings",
+     "type": "blog"
+    },
+    {
+     "url": "https://www.netpicks.com/supertrend-indicator/",
+     "title": "Supertrend Settings: Exact Rules, Backtest, and Chart Examples",
+     "type": "blog"
+    },
+    {
+     "url": "https://www.mql5.com/en/blogs/post/763976",
+     "title": "Best SuperTrend Settings for 1-Minute Chart",
+     "type": "forum"
+    }
+   ]
+  },
+  "signature": "dd64e5dcac856200",
+  "sources": [
+   {
+    "url": "https://trendspider.com/learning-center/supertrend-indicator-a-comprehensive-guide/",
+    "title": "SuperTrend Indicator: Comprehensive Guide to Signals & Settings",
+    "type": "blog"
+   },
+   {
+    "url": "https://www.netpicks.com/supertrend-indicator/",
+    "title": "Supertrend Settings: Exact Rules, Backtest, and Chart Examples",
+    "type": "blog"
+   },
+   {
+    "url": "https://www.mql5.com/en/blogs/post/763976",
+    "title": "Best SuperTrend Settings for 1-Minute Chart",
+    "type": "forum"
+   }
+  ],
+  "popularity": 4,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "researcher",
+  "tags": [
+   "supertrend",
+   "researcher"
+  ]
+ },
+ "rsi_2_mean_reversion_scalp": {
+  "name": "RSI(2) Mean Reversion Scalp",
+  "aliases": [
+   "Connors RSI-2",
+   "RSI 2-Period Pullback"
+  ],
+  "family": "rsi stochastic",
+  "spec": {
+   "name": "RSI(2) Mean Reversion Scalp",
+   "aliases": [
+    "Connors RSI-2",
+    "RSI 2-Period Pullback"
+   ],
+   "family": "rsi_stochastic",
+   "timeframe": "5m",
+   "indicators": [
+    "rsi",
+    "sma"
+   ],
+   "entry_trigger": "rsi_extreme",
+   "exit_type": "ma_touch",
+   "entry_long": "Determine the dominant intraday trend with a longer moving average (source uses 200-period SMA; adapted intraday as a 50-period SMA on 5-minute candles). Only when price is above that moving average, go long when the 2-period RSI drops below 5-10 (deeply oversold short-term dip within the uptrend).",
+   "entry_short": "Only when price is below the moving average, go short when the 2-period RSI rises above 90-95 (deeply overbought short-term bounce within the downtrend).",
+   "exit": "Exit the long when price closes above a short moving average (source: 5-day SMA; adapted as 5-period SMA on 5-minute candles); exit the short when price closes below that short moving average.",
+   "stop": "No stop defined in the original source; adapt with a hard stop below/above the recent swing low/high to control risk intraday.",
+   "target": "No fixed price target; exit is signal-based (short MA cross), see exit field.",
+   "filters": "Only trade in the direction of the longer-term trend filter (price vs the longer SMA); this is a pullback-in-trend strategy, not a reversal strategy.",
+   "params": {
+    "rsi_period": 2,
+    "oversold": 5,
+    "overbought": 95,
+    "trend_ma": 50,
+    "exit_ma": 5
+   },
+   "popularity": 5,
+   "data_needs": "ohlcv_5m",
+   "testable": "adapt",
+   "testable_reason": "Original uses daily bars (200-day and 5-day SMA); parameters are rescaled here to intraday 5-minute bars (50-period and 5-period SMA), which is an adaptation, not the literal source timeframe.",
+   "sources": [
+    {
+     "url": "https://chartschool.stockcharts.com/table-of-contents/trading-strategies-and-models/trading-strategies/rsi-2",
+     "title": "RSI(2) Strategy",
+     "type": "broker_education"
+    },
+    {
+     "url": "https://www.forex.in.rs/rsi-2/",
+     "title": "Larry Connors RSI 2-Period Strategy",
+     "type": "blog"
+    },
+    {
+     "url": "https://blog.elearnmarkets.com/how-to-trade-larry-connors-2-period-rsi/",
+     "title": "Larry Connor's 2 Period RSI",
+     "type": "blog"
+    }
+   ]
+  },
+  "signature": "da8fc6dcbe35a4a1",
+  "sources": [
+   {
+    "url": "https://chartschool.stockcharts.com/table-of-contents/trading-strategies-and-models/trading-strategies/rsi-2",
+    "title": "RSI(2) Strategy",
+    "type": "broker_education"
+   },
+   {
+    "url": "https://www.forex.in.rs/rsi-2/",
+    "title": "Larry Connors RSI 2-Period Strategy",
+    "type": "blog"
+   },
+   {
+    "url": "https://blog.elearnmarkets.com/how-to-trade-larry-connors-2-period-rsi/",
+    "title": "Larry Connor's 2 Period RSI",
+    "type": "blog"
+   }
+  ],
+  "popularity": 5,
+  "data_needs": "ohlcv_5m",
+  "testable": "adapt",
+  "testable_reason": "Original uses daily bars (200-day and 5-day SMA); parameters are rescaled here to intraday 5-minute bars (50-period and 5-period SMA), which is an adaptation, not the literal source timeframe.",
+  "origin": "researcher",
+  "tags": [
+   "rsi-stochastic",
+   "researcher"
+  ]
+ },
+ "s_9_21_ema_crossover_scalp": {
+  "name": "9/21 EMA Crossover Scalp",
+  "aliases": [
+   "EMA 9 21 Cross",
+   "Fast/Slow EMA Scalping"
+  ],
+  "family": "ma cross",
+  "spec": {
+   "name": "9/21 EMA Crossover Scalp",
+   "aliases": [
+    "EMA 9 21 Cross",
+    "Fast/Slow EMA Scalping"
+   ],
+   "family": "ma_cross",
+   "timeframe": "5m",
+   "indicators": [
+    "ema9",
+    "ema21"
+   ],
+   "entry_trigger": "ema_cross",
+   "exit_type": "fixed_rr",
+   "entry_long": "Go long when the 9-period EMA crosses above the 21-period EMA on a 5-minute candle close, price is trading above both EMAs, and the EMAs are visibly separating (steep angle) after the cross rather than flat/overlapping.",
+   "entry_short": "Go short when the 9-period EMA crosses below the 21-period EMA on a 5-minute candle close with price below both EMAs and the EMAs separating.",
+   "exit": "Exit at target or stop; alternatively exit when the 9 EMA begins flattening against the trade direction, or trail the stop using the 9 EMA.",
+   "stop": "Stop just beyond the low (for longs) or high (for shorts) of the crossover candle, or beyond the most recent swing low/high.",
+   "target": "Fixed reward:risk of 2:1 from entry versus the initial stop distance.",
+   "filters": "Avoid sideways/range-bound markets; the strategy performs best when a higher-timeframe trend filter (e.g. 15-minute trend direction) agrees with the crossover direction.",
+   "params": {
+    "fast_ema": 9,
+    "slow_ema": 21,
+    "reward_risk": 2
+   },
+   "popularity": 5,
+   "data_needs": "ohlcv_5m",
+   "testable": "yes",
+   "sources": [
+    {
+     "url": "https://www.sahi.com/blogs/ema-scalping-strategy-the-9-21-crossover-setup-for-nifty-and-bank-nifty",
+     "title": "9/21 EMA Scalping Strategy: Nifty & Bank Nifty Setup",
+     "type": "broker_education"
+    },
+    {
+     "url": "https://fxnx.com/en/blog/ema-crossover-scalping-fast-trading-playbook",
+     "title": "EMA Crossover Scalping: The 9/21 Fast Trading Setup",
+     "type": "blog"
+    },
+    {
+     "url": "https://www.dominionmarkets.com/9-21-exponential-moving-average/",
+     "title": "9 and 21 EMA Crossover Strategy for Better Entries",
+     "type": "blog"
+    }
+   ]
+  },
+  "signature": "50e4e6fbfe32716b",
+  "sources": [
+   {
+    "url": "https://www.sahi.com/blogs/ema-scalping-strategy-the-9-21-crossover-setup-for-nifty-and-bank-nifty",
+    "title": "9/21 EMA Scalping Strategy: Nifty & Bank Nifty Setup",
+    "type": "broker_education"
+   },
+   {
+    "url": "https://fxnx.com/en/blog/ema-crossover-scalping-fast-trading-playbook",
+    "title": "EMA Crossover Scalping: The 9/21 Fast Trading Setup",
+    "type": "blog"
+   },
+   {
+    "url": "https://www.dominionmarkets.com/9-21-exponential-moving-average/",
+    "title": "9 and 21 EMA Crossover Strategy for Better Entries",
+    "type": "blog"
+   }
+  ],
+  "popularity": 5,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "researcher",
+  "tags": [
+   "ma-cross",
+   "researcher"
+  ]
+ },
+ "bollinger_band_bounce_scalp": {
+  "name": "Bollinger Band Bounce Scalp",
+  "aliases": [
+   "BB Mean Reversion Scalp"
+  ],
+  "family": "mean reversion",
+  "spec": {
+   "name": "Bollinger Band Bounce Scalp",
+   "aliases": [
+    "BB Mean Reversion Scalp"
+   ],
+   "family": "mean_reversion",
+   "timeframe": "5m",
+   "indicators": [
+    "bollinger_bands",
+    "rsi"
+   ],
+   "entry_trigger": "bb_band_reclaim",
+   "exit_type": "ma_touch",
+   "entry_long": "Using 20-period Bollinger Bands (2 std dev) on 5-minute candles, when a candle closes below the lower band and the 7-period RSI is below 35 (oversold), go long on the close of the next candle that closes back inside the bands (i.e. above the lower band again), confirming the reversal.",
+   "entry_short": "When a candle closes above the upper band and the 7-period RSI is above 65 (overbought), go short on the close of the next candle that closes back inside the bands (below the upper band again).",
+   "exit": "Target the 20-period middle band (basis line); do not hold for the opposite band.",
+   "stop": "Stop beyond the low/high of the entry (confirmation) candle, or 1x ATR beyond entry, whichever is tighter.",
+   "target": "20-period SMA (middle Bollinger Band).",
+   "filters": "Only take this setup in range-bound/non-trending conditions; avoid when price is trending strongly through the bands (walking the band) since reversion fails in strong trends.",
+   "params": {
+    "bb_period": 20,
+    "bb_stddev": 2,
+    "rsi_period": 7,
+    "rsi_oversold": 35,
+    "rsi_overbought": 65
+   },
+   "popularity": 3,
+   "data_needs": "ohlcv_5m",
+   "testable": "yes",
+   "sources": [
+    {
+     "url": "https://www.sahi.com/blogs/bollinger-bands-scalping-squeeze-breakouts-and-mean-reversion-setups",
+     "title": "Bollinger Bands Scalping: BB Squeeze & Mean Reversion",
+     "type": "broker_education"
+    },
+    {
+     "url": "https://www.horizontrading.ai/learn/bollinger-bands-trading-strategy",
+     "title": "Bollinger Bands Strategy \u2014 Profitable Ways to Trade BB Squeezes and Bounces",
+     "type": "blog"
+    },
+    {
+     "url": "https://www.tradewink.com/learn/mean-reversion-trading-strategy",
+     "title": "Mean Reversion Trading: Strategy Guide with Entry Rules",
+     "type": "blog"
+    }
+   ]
+  },
+  "signature": "625c82f4bf0950d6",
+  "sources": [
+   {
+    "url": "https://www.sahi.com/blogs/bollinger-bands-scalping-squeeze-breakouts-and-mean-reversion-setups",
+    "title": "Bollinger Bands Scalping: BB Squeeze & Mean Reversion",
+    "type": "broker_education"
+   },
+   {
+    "url": "https://www.horizontrading.ai/learn/bollinger-bands-trading-strategy",
+    "title": "Bollinger Bands Strategy \u2014 Profitable Ways to Trade BB Squeezes and Bounces",
+    "type": "blog"
+   },
+   {
+    "url": "https://www.tradewink.com/learn/mean-reversion-trading-strategy",
+    "title": "Mean Reversion Trading: Strategy Guide with Entry Rules",
+    "type": "blog"
+   }
+  ],
+  "popularity": 3,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "researcher",
+  "tags": [
+   "mean-reversion",
+   "researcher"
+  ]
+ },
+ "camarilla_pivot_reversal_scalp": {
+  "name": "Camarilla Pivot Reversal Scalp",
+  "aliases": [
+   "Camarilla S3/R3 Scalp"
+  ],
+  "family": "pivot",
+  "spec": {
+   "name": "Camarilla Pivot Reversal Scalp",
+   "aliases": [
+    "Camarilla S3/R3 Scalp"
+   ],
+   "family": "pivot",
+   "timeframe": "5m",
+   "indicators": [
+    "camarilla_pivots"
+   ],
+   "entry_trigger": "pivot_level_reversal",
+   "exit_type": "fixed_rr",
+   "entry_long": "Each day, compute Camarilla levels from the previous day's high (H), low (L) and close (C): R3 = C + (H-L)*1.1/4, R4 = C + (H-L)*1.1/2, S3 = C - (H-L)*1.1/4, S4 = C - (H-L)*1.1/2. Go long when price falls to and reverses off S3 (candle closes back above S3 after touching/piercing it) for a mean-reversion scalp back toward the pivot/R1; alternatively treat a close beyond S4 as a breakdown-continuation long... (sources specify both reversal-at-S3 and breakout-at-S4 variants; this spec uses the S3 reversal variant since it is the most commonly cited scalping rule).",
+   "entry_short": "Go short when price rises to and reverses off R3 (candle closes back below R3 after touching/piercing it), targeting a move back toward the pivot/R1.",
+   "exit": "Exit at target or stop.",
+   "stop": "Stop just beyond S4 (for the S3-reversal long) or beyond R4 (for the R3-reversal short).",
+   "target": "First target the next inner level (e.g. R1/S1 or the central pivot); fixed reward:risk ~1:1 to 2:1 commonly used.",
+   "filters": "Best used on timeframes with less noise; 5-minute is noisier than 15m/30m so only take reversal signals with a clear rejection candle (long wick) at the level.",
+   "params": {
+    "camarilla_multiplier": 1.1,
+    "reward_risk": 1.5
+   },
+   "popularity": 4,
+   "data_needs": "ohlcv_5m",
+   "testable": "yes",
+   "sources": [
+    {
+     "url": "https://www.bajajfinserv.in/camarilla-pivot-points",
+     "title": "Camarilla Pivot Points Trading Guide - Formula, Strategy and Signals",
+     "type": "broker_education"
+    },
+    {
+     "url": "https://arongroups.co/forex-articles/camarilla-pivot-trading-strategy/",
+     "title": "Camarilla Pivot Trading Strategy: Intraday Breakouts & Mean Reversion",
+     "type": "blog"
+    },
+    {
+     "url": "https://www.litefinance.org/blog/for-beginners/trading-strategies/camarilla-pivot-points-strategy/",
+     "title": "Camarilla Pivot Points: Strategies for Successful Trading",
+     "type": "broker_education"
+    }
+   ]
+  },
+  "signature": "a503b8914733b4c7",
+  "sources": [
+   {
+    "url": "https://www.bajajfinserv.in/camarilla-pivot-points",
+    "title": "Camarilla Pivot Points Trading Guide - Formula, Strategy and Signals",
+    "type": "broker_education"
+   },
+   {
+    "url": "https://arongroups.co/forex-articles/camarilla-pivot-trading-strategy/",
+    "title": "Camarilla Pivot Trading Strategy: Intraday Breakouts & Mean Reversion",
+    "type": "blog"
+   },
+   {
+    "url": "https://www.litefinance.org/blog/for-beginners/trading-strategies/camarilla-pivot-points-strategy/",
+    "title": "Camarilla Pivot Points: Strategies for Successful Trading",
+    "type": "broker_education"
+   }
+  ],
+  "popularity": 4,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "researcher",
+  "tags": [
+   "pivot",
+   "researcher"
+  ]
+ },
+ "stochastic_oscillator_crossover_scalp": {
+  "name": "Stochastic Oscillator Crossover Scalp",
+  "aliases": [
+   "Stochastic %K %D Scalp"
+  ],
+  "family": "rsi stochastic",
+  "spec": {
+   "name": "Stochastic Oscillator Crossover Scalp",
+   "aliases": [
+    "Stochastic %K %D Scalp"
+   ],
+   "family": "rsi_stochastic",
+   "timeframe": "5m",
+   "indicators": [
+    "stochastic",
+    "sma"
+   ],
+   "entry_trigger": "stochastic_cross_extreme",
+   "exit_type": "fixed_rr",
+   "entry_long": "First establish trend bias with a moving average (e.g. 50-period SMA on 5-minute candles): price above the MA = bullish bias, only take longs. Within that bias, go long when the Stochastic %K line crosses above the %D line while both are below 20 (oversold zone), confirmed on candle close.",
+   "entry_short": "With price below the MA (bearish bias), go short when %K crosses below %D while both are above 80 (overbought zone), confirmed on candle close.",
+   "exit": "Exit at target or stop.",
+   "stop": "Stop beyond the recent swing low/high at entry.",
+   "target": "Fixed reward:risk of 1.5:1 to 2:1, or exit when %K re-crosses %D in the opposite direction.",
+   "filters": "Only trade crossovers in the extreme zones (below 20 / above 80) aligned with the MA trend filter; ignore crossovers in the middle of the range (40-60) which are noise.",
+   "params": {
+    "stoch_k": 14,
+    "stoch_d": 3,
+    "smooth": 3,
+    "oversold": 20,
+    "overbought": 80,
+    "trend_ma": 50
+   },
+   "popularity": 4,
+   "data_needs": "ohlcv_5m",
+   "testable": "yes",
+   "sources": [
+    {
+     "url": "https://daytradingtoolkit.com/strategies/stochastic-oscillator-day-trading-strategy",
+     "title": "The Stochastic Oscillator Day Trading Strategy",
+     "type": "blog"
+    },
+    {
+     "url": "https://fxnx.com/en/blog/stochastic-oscillator-for-scalping-your-forex-edge",
+     "title": "Stochastic Scalping: The 5,3,3 Setup",
+     "type": "blog"
+    },
+    {
+     "url": "https://www.mql5.com/en/blogs/post/752008",
+     "title": "A simple scalping trading strategy based on Stochastic and Moving indicators",
+     "type": "forum"
+    }
+   ]
+  },
+  "signature": "9197ee58dfc9ed28",
+  "sources": [
+   {
+    "url": "https://daytradingtoolkit.com/strategies/stochastic-oscillator-day-trading-strategy",
+    "title": "The Stochastic Oscillator Day Trading Strategy",
+    "type": "blog"
+   },
+   {
+    "url": "https://fxnx.com/en/blog/stochastic-oscillator-for-scalping-your-forex-edge",
+    "title": "Stochastic Scalping: The 5,3,3 Setup",
+    "type": "blog"
+   },
+   {
+    "url": "https://www.mql5.com/en/blogs/post/752008",
+    "title": "A simple scalping trading strategy based on Stochastic and Moving indicators",
+    "type": "forum"
+   }
+  ],
+  "popularity": 4,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "researcher",
+  "tags": [
+   "rsi-stochastic",
+   "researcher"
+  ]
+ },
+ "heikin_ashi_trend_scalp": {
+  "name": "Heikin Ashi Trend Scalp",
+  "aliases": [
+   "Heikin Ashi Consecutive Candle Scalp"
+  ],
+  "family": "price action",
+  "spec": {
+   "name": "Heikin Ashi Trend Scalp",
+   "aliases": [
+    "Heikin Ashi Consecutive Candle Scalp"
+   ],
+   "family": "price_action",
+   "timeframe": "5m",
+   "indicators": [
+    "heikin_ashi",
+    "ema9",
+    "ema21"
+   ],
+   "entry_trigger": "ha_consecutive_candles",
+   "exit_type": "opposite_signal",
+   "entry_long": "Build Heikin Ashi candles from the regular OHLC and plot 9/21 EMAs. Go long after seeing two or three consecutive green Heikin Ashi candles with little/no lower wick, occurring while price trades above both EMAs, confirming sustained buying pressure.",
+   "entry_short": "Go short after two or three consecutive red Heikin Ashi candles with little/no upper wick, occurring while price trades below both EMAs.",
+   "exit": "Exit on the first Heikin Ashi candle that changes color against the position (or the second if you want to tolerate one pause candle), since the color flip signals momentum loss.",
+   "stop": "Stop beyond the low (for longs) or high (for shorts) of the most recent Heikin Ashi candle in the trend run.",
+   "target": "No fixed target; ride the trend and exit on the color-flip signal (opposite_signal exit).",
+   "filters": "Avoid entries when consecutive candles show large wicks on both ends (indicates indecision/consolidation, not trend).",
+   "params": {
+    "confirm_candles": 2,
+    "fast_ema": 9,
+    "slow_ema": 21
+   },
+   "popularity": 3,
+   "data_needs": "ohlcv_5m",
+   "testable": "yes",
+   "sources": [
+    {
+     "url": "https://blog.opofinance.com/en/heikin-ashi-strategy/",
+     "title": "5 Heikin Ashi Strategy Rules That Actually Work",
+     "type": "blog"
+    },
+    {
+     "url": "https://theforexgeek.com/buy-sell-scalping-strategy-using-heikin-ashi-supertrend/",
+     "title": "Buy Sell Scalping Strategy Using Heikin Ashi & Supertrend",
+     "type": "blog"
+    },
+    {
+     "url": "https://www.quantifiedstrategies.com/heikin-ashi-trading-strategy/",
+     "title": "Heikin Ashi Trading Strategy (Backtest, Settings & Trading Rules)",
+     "type": "blog"
+    }
+   ]
+  },
+  "signature": "aa9c2d3796861683",
+  "sources": [
+   {
+    "url": "https://blog.opofinance.com/en/heikin-ashi-strategy/",
+    "title": "5 Heikin Ashi Strategy Rules That Actually Work",
+    "type": "blog"
+   },
+   {
+    "url": "https://theforexgeek.com/buy-sell-scalping-strategy-using-heikin-ashi-supertrend/",
+    "title": "Buy Sell Scalping Strategy Using Heikin Ashi & Supertrend",
+    "type": "blog"
+   },
+   {
+    "url": "https://www.quantifiedstrategies.com/heikin-ashi-trading-strategy/",
+    "title": "Heikin Ashi Trading Strategy (Backtest, Settings & Trading Rules)",
+    "type": "blog"
+   }
+  ],
+  "popularity": 3,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "researcher",
+  "tags": [
+   "price-action",
+   "researcher"
+  ]
+ },
+ "macd_signal_line_crossover_scalp": {
+  "name": "MACD Signal-Line Crossover Scalp",
+  "aliases": [
+   "MACD Zero Cross Scalp"
+  ],
+  "family": "momentum",
+  "spec": {
+   "name": "MACD Signal-Line Crossover Scalp",
+   "aliases": [
+    "MACD Zero Cross Scalp"
+   ],
+   "family": "momentum",
+   "timeframe": "5m",
+   "indicators": [
+    "macd"
+   ],
+   "entry_trigger": "macd_signal_cross",
+   "exit_type": "fixed_rr",
+   "entry_long": "Using a fast MACD setting for scalping (e.g. 5,13,1 or 8,17,9 on 5-minute candles), go long when the MACD line crosses above the signal line; for higher-probability entries, require this crossover to occur above (or shortly after crossing) the zero line, confirming trend alignment.",
+   "entry_short": "Go short when the MACD line crosses below the signal line, ideally below (or shortly after crossing) the zero line.",
+   "exit": "Exit quickly when the MACD and signal lines start converging again (momentum fading), at a fixed target/stop, or after a short time limit (e.g. 2-5 candles) if neither is hit.",
+   "stop": "Stop beyond the recent swing low/high at the crossover candle.",
+   "target": "Fixed reward:risk of ~1.5:1 to 2:1 from entry versus the stop distance.",
+   "filters": "Use the zero-line position as a trend filter: only take signal-line crossovers that agree with the zero-line bias (MACD above zero = only longs, below zero = only shorts).",
+   "params": {
+    "fast": 8,
+    "slow": 17,
+    "signal": 9,
+    "reward_risk": 1.5
+   },
+   "popularity": 4,
+   "data_needs": "ohlcv_5m",
+   "testable": "yes",
+   "sources": [
+    {
+     "url": "https://blog.elearnmarkets.com/5-trading-strategies-using-macd/",
+     "title": "5 MACD Strategies That All Traders Can Use",
+     "type": "blog"
+    },
+    {
+     "url": "https://www.smctradeonline.com/blog/technical-analysis/macd-settings-for-five-minute-chart",
+     "title": "Best MACD Settings for 5 Minute Chart Trading",
+     "type": "broker_education"
+    },
+    {
+     "url": "https://blog.opofinance.com/en/macd-indicator-for-scalping/",
+     "title": "MACD Indicator for Scalping: Mastering Short-Term Forex Trading",
+     "type": "blog"
+    }
+   ]
+  },
+  "signature": "77b34f2f4ae25a36",
+  "sources": [
+   {
+    "url": "https://blog.elearnmarkets.com/5-trading-strategies-using-macd/",
+    "title": "5 MACD Strategies That All Traders Can Use",
+    "type": "blog"
+   },
+   {
+    "url": "https://www.smctradeonline.com/blog/technical-analysis/macd-settings-for-five-minute-chart",
+    "title": "Best MACD Settings for 5 Minute Chart Trading",
+    "type": "broker_education"
+   },
+   {
+    "url": "https://blog.opofinance.com/en/macd-indicator-for-scalping/",
+    "title": "MACD Indicator for Scalping: Mastering Short-Term Forex Trading",
+    "type": "blog"
+   }
+  ],
+  "popularity": 4,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "researcher",
+  "tags": [
+   "momentum",
+   "researcher"
+  ]
+ },
+ "inside_bar_breakout_scalp": {
+  "name": "Inside Bar Breakout Scalp",
+  "aliases": [
+   "Mother Bar Breakout"
+  ],
+  "family": "price action",
+  "spec": {
+   "name": "Inside Bar Breakout Scalp",
+   "aliases": [
+    "Mother Bar Breakout"
+   ],
+   "family": "price_action",
+   "timeframe": "5m",
+   "indicators": [
+    "candle_pattern"
+   ],
+   "entry_trigger": "inside_bar_break",
+   "exit_type": "fixed_rr",
+   "entry_long": "Identify an 'inside bar' pattern on 5-minute candles: a candle (the inside bar) whose high is lower than the previous candle's (the mother bar) high and whose low is higher than the mother bar's low. Go long when price breaks above the mother bar's high after the inside bar forms (candle close above mother-bar high, or stop order placed just above it).",
+   "entry_short": "Go short when price breaks below the mother bar's low after the inside bar forms (candle close below mother-bar low, or stop order placed just below it).",
+   "exit": "Exit at target or stop.",
+   "stop": "For longs, stop below the mother bar's low; for shorts, stop above the mother bar's high.",
+   "target": "Minimum reward:risk of 1:2, or the next intraday support/resistance level, whichever is closer.",
+   "filters": "Prefer inside bars that form after a clear prior move (range contraction following expansion) rather than inside bars in the middle of a tight chop; multiple consecutive inside bars tightening the range increase conviction.",
+   "params": {
+    "reward_risk": 2
+   },
+   "popularity": 4,
+   "data_needs": "ohlcv_5m",
+   "testable": "yes",
+   "sources": [
+    {
+     "url": "https://tradingstrategyguides.com/ultimate-guide-to-the-inside-bar-breakout-strategy/",
+     "title": "Ultimate Guide To The Inside Bar Breakout Strategy",
+     "type": "blog"
+    },
+    {
+     "url": "https://forextraininggroup.com/master-the-simple-inside-bar-breakout-trading-strategy/",
+     "title": "Master the Simple Inside Bar Breakout Trading Strategy",
+     "type": "blog"
+    },
+    {
+     "url": "https://priceaction.com/price-action-university/strategies/inside-bar/",
+     "title": "Inside Bar Trading Strategy",
+     "type": "broker_education"
+    }
+   ]
+  },
+  "signature": "6efbfd91be299c5e",
+  "sources": [
+   {
+    "url": "https://tradingstrategyguides.com/ultimate-guide-to-the-inside-bar-breakout-strategy/",
+    "title": "Ultimate Guide To The Inside Bar Breakout Strategy",
+    "type": "blog"
+   },
+   {
+    "url": "https://forextraininggroup.com/master-the-simple-inside-bar-breakout-trading-strategy/",
+    "title": "Master the Simple Inside Bar Breakout Trading Strategy",
+    "type": "blog"
+   },
+   {
+    "url": "https://priceaction.com/price-action-university/strategies/inside-bar/",
+    "title": "Inside Bar Trading Strategy",
+    "type": "broker_education"
+   }
+  ],
+  "popularity": 4,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "researcher",
+  "tags": [
+   "price-action",
+   "researcher"
+  ]
+ }
+}
