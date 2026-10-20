@@ -48,7 +48,7 @@ Exit:
     the 15:30 close) regardless of P&L; no new entries after
     NO_NEW_ENTRY_AFTER.
 
-Optional confirmation candle (CONFIRM_BARS, default 0 = off): on a flip the
+Confirmation candles (CONFIRM_BARS, default 2 since 2026-10-21): on a flip the
 signal is only noted; the entry waits for the next CONFIRM_BARS closed candles,
 each of which must stay on the flip's side of the SAR and close beyond the flip
 candle's close (+ CONFIRM_MIN_MOVE_PCT). Otherwise the signal is dropped. The
@@ -128,7 +128,8 @@ MACD_SIGNAL = 9
 
 # ---- optional quick 1R target (spec: no fixed target by default) ----
 # ---- optional confirmation candle (default OFF = enter on the flip candle's close, as before) ----
-CONFIRM_BARS = 0              # 0 = off; N = after a flip, wait N more closed 5m candles before entering
+CONFIRM_BARS = 2              # after a flip, wait N more closed 5m candles before entering; 0 = off (enter on the flip candle).
+                              # 2 by default since 2026-10-21 (user decision; the 37-day test favoured 0 except on RELIANCE)
 CONFIRM_MIN_MOVE_PCT = 0.0    # each confirming close must be beyond the flip candle's close by this % of price
 
 # ---- optional entry filters (compared on all cached days 2026-10-20; only the VIX near-high filter is ON) ----

@@ -238,3 +238,4 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [ ] Strategy filters to test across all days: late-entry (move already extended, e.g. > k x ATR since the swing), chop/sideways (ADX or choppiness), VIX trend at entry for option buyers, max initial stop distance
 - [x] parabolic_sar_flip_scalp: VIX_NEAR_HIGH_PCT=10 is the default (user decision 2026-10-21); repo runs regenerated
 - [ ] VIX filter robustness: backfill 60+ days, sweep 5-30 %, choose on older days and check on newer ones; consider a range that ignores the opening minutes
+- [x] parabolic_sar_flip_scalp: CONFIRM_BARS=2 default as well (user decision 2026-10-21, against the 37-day comparison; revisit after more days)
