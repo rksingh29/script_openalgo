@@ -374,3 +374,77 @@ Run: `script-openalgo webapp` then open http://127.0.0.1:5055 (port overridable 
 - Stats count only runs made after the strategy code was last edited (`code_edited_at`); older runs remain visible, labelled "old version".
 - Tags: free text, normalised (lower-case, a-z 0-9 - _), max 20 per strategy; suggested market-view tags bullish / bearish / neutral / both-sides / hedge.
 - Tested through the API (tags, rules, rename, copy incl. file copy, syntax-error block, versions, restore, warnings, delete) and the stats rule on a scratch DB. The browser page itself was only syntax-checked.
+
+## 16. Stocks and stock options (PLAN, 2026-10-20; first stocks: RELIANCE and OFSS)
+
+### 16.1 Goal and scope
+Run the same strategies (signal on the underlying's 5m candles, trade an ATM CE/PE bought on the signal) on stocks, not only on NIFTY and BANKNIFTY. First two stocks: **RELIANCE** and **OFSS**. Trading the stock itself (cash/futures) is NOT in this phase (see 16.8).
+
+### 16.2 What the instrument table already gives us
+`backtest_core/instruments.py` drives the data loader, FakeClient, backfill and the web app (instrument dropdown). So most of the work is new table entries plus removing index-only assumptions. The runs table already has an `executor` column.
+
+### 16.3 Probe of OpenAlgo, 2026-10-20 (before the open, broker = dhan, data for 2026-10-19)
+| Item | RELIANCE | OFSS |
+|---|---|---|
+| Underlying | exchange `NSE`, symbol `RELIANCE` | `NSE`, `OFSS` |
+| Close 19 Oct | 1202.8 (range 1201-1228) | 10170 (range 10134-10386) |
+| Volume of the day | 15.0 million shares | 118,051 shares (thin) |
+| Expiries (`expiry` on NFO) | 27-OCT-26, 23-NOV-26, 29-DEC-26 (monthly) | same three |
+| Lot size | 500 | 100 |
+| Strike step | 10 (1190, 1200, 1210 exist; 1195, 1205 do not) | irregular: 10000, 10100, 10200, 10250, 10300, 10400 exist; 10150 does not (50 near the money, 100 further out) |
+| Option bars on 19 Oct | 385 per strike, volume in the millions | 177-385 per strike, volume 6k-178k: gaps on the far strikes, thin |
+
+Findings that change the design:
+1. **Stock candles stop at 15:14**: 360 bars for 09:15-15:14 (15:15-15:29 missing), against 375 for the index. The loader's `MIN_BARS_INDEX = 370` would mark every stock day incomplete. The strategies square off at 15:15, so the missing minutes are not needed, but the gate must expect about 360 for stocks.
+2. **Strike step is not constant** (OFSS). A fixed `strike_step` in the table is wrong; candidate strikes must be tried and "symbol not found" (HTTP 400) treated as "strike not listed", not as missing data. FakeClient's ATM must snap to the nearest strike that exists in the cache.
+3. **`optionsymbol` and `optionchain` return ATM from `underlying_ltp`**, which is 0 outside market hours (they returned strike 620 for RELIANCE and 4000 for OFSS). Live resolution only works while the market is open. Backtests are unaffected (FakeClient computes ATM from cached bars).
+4. **OFSS is thin**: a single strike can have fewer than 200 one-minute bars and a few hundred lots a day. Results on OFSS must be treated with great suspicion; spreads are not simulated.
+5. Option bars come as 385 per strike (extra padding after 15:30, same as NIFTY: dropped by the cleaner).
+6. The option symbol format is the same as the index one: `RELIANCE27OCT261200CE`.
+
+### 16.4 Changes, in order
+**A. Instrument table** (`instruments.py`)
+- Add `RELIANCE` and `OFSS`. New fields: `underlying_exchange` (`NSE` / `NSE_INDEX`), `min_underlying_bars` (360 for stocks, 370 for indices), `strike_step` as a hint only, `strike_buffer`, `expiry_cycle: monthly`, `max_expiry_gap_days: 35`, `kind: stock|index`.
+- Keep `index_symbol` / `index_exchange` working as aliases of `underlying_symbol` / `underlying_exchange` so the existing strategies and results do not break.
+
+**B. Data layer** (`data_loader.py`, `backfill.py`, `bias_report.py`)
+- Use the per-instrument minimum bars and exchange instead of `MIN_BARS_INDEX` and `index_exchange`.
+- Strike candidates: generate with the hint step, fetch, and record strikes that return "not found" as `unlisted` (not an issue). Completeness rule for options: core strikes (near the day's range) must have coverage >= 0.90; for thin stocks a lower threshold can be set per instrument (`min_option_coverage`). The manifest lists `unlisted` and `thin` strikes.
+- The daily bar (previous-day levels) and the calendar stay as they are (calendar instrument NIFTY).
+- Stock option backfill: the nearest monthly contract lives about 35 days (more bars per series than a weekly NIFTY contract). One call per series for the listed life, same as NIFTY.
+
+**C. FakeClient** (`fake_client.py`)
+- ATM = nearest strike present in the cache, not `round(spot / step) * step`.
+- `optionchain` / `_chain_from_bars` use the manifest's strike list.
+- Lot size comes from the manifest (already so).
+
+**D. Strategies and backtest runner**
+- The runner sets `UNDERLYING` and now also `INDEX_EXCHANGE` (12 strategies hard-code `NSE_INDEX`; stocks need `NSE`).
+- Rupee-sized constants must be per instrument: `DAILY_MAX_LOSS` (3000 is NIFTY-sized), point constants (`STOP_BUFFER_PTS`, `PCR_WITHIN_POINTS`). Prefer percentages; give each stock an override block read from the instrument table or `PARAM_OVERRIDES`.
+- Strategies that use the underlying's volume (VWAP, volume multiples) become meaningful on stocks (the index has no real volume).
+- Strategy files in the user's workspace are copies; changes must be copied there (the package assets only seed new workspaces).
+
+**E. Web app**
+- The instrument dropdown already reads the table; nothing else is needed for RELIANCE/OFSS. Data tab: show `unlisted` / `thin` strikes. Results already group by instrument.
+
+### 16.5 Order of work and checkpoints
+1. A + B for RELIANCE only; backfill 30 days; check completeness by hand (print the manifest: strikes found, unlisted, coverage).
+2. C + D; run ONE strategy (the simplest, e.g. the opening range breakout) for one day and hand-check fills against the raw candles with `verify`.
+3. Regression: NIFTY (-692.25 on 2026-10-16) and BANKNIFTY (-1330.50) results must not change.
+4. Add OFSS (irregular strikes, thin) and repeat 1-3. OFSS is the stress test for the unlisted/thin handling.
+5. Only then run all strategies over the 30 days for both stocks.
+
+### 16.6 Risks
+- **Liquidity and spreads**: fills are at the 1-minute close with no spread. For OFSS this flatters results badly. Add a per-instrument slippage setting (points or % of premium) before reading any OFSS number.
+- **Data volume**: about 40 strikes x 2 x 30 days per stock; the rate limit applies.
+- **Corporate actions** (splits, bonus, dividends) distort stock history and strikes; check the backfill window for any.
+- **Strategy tuning**: all strategies were written and reviewed on NIFTY; passing there says nothing about a stock.
+- **Stock candles end at 15:14**: any strategy that expects bars at 15:15 or later (for example a square-off bar) must tolerate it.
+
+### 16.7 Decisions taken (2026-10-20)
+- Start with RELIANCE, then OFSS.
+- Vehicle: ATM option buying (CE long, PE short), same as the index strategies.
+- Not decided yet: the slippage model for stocks; whether to add more stocks after these two.
+
+### 16.8 Not in this phase
+Trading the stock itself (equity MIS or futures): needs a second executor, a quantity rule and a cost model; revisit after step 5 if the signals look worth it.
