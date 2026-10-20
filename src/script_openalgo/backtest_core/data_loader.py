@@ -321,8 +321,13 @@ def ensure_data(day, instrument="NIFTY", force=False):
     strikes = candidate_strikes(instrument, float(idx["low"].min()), float(idx["high"].max()))
     print(f"[{instrument}] range {idx['low'].min():.0f}-{idx['high'].max():.0f} | expiry {expiry} | "
           f"{len(strikes)} strikes x CE/PE | lot {lot}")
-    unlisted, cov = [], min_coverage(instrument)
+    unlisted, cov, warnings = [], min_coverage(instrument), []
+    step = cfg["strike_step"]
+    core_lo = math.floor(float(idx["low"].min()) / step) * step       # strikes inside the day's range must be complete;
+    core_hi = math.ceil(float(idx["high"].max()) / step) * step       # the +/- strike_buffer ones only warn (as in backfill)
     for strike in strikes:
+        target = issues if core_lo <= strike <= core_hi else warnings
+        sfx = "" if target is issues else " (outer buffer strike)"
         for ot in ("CE", "PE"):
             sym = option_symbol(instrument, expiry, strike, ot)
             df, _ = _load_or_fetch(sym, sym, cfg["opt_exchange"], day, force)
@@ -334,11 +339,12 @@ def ensure_data(day, instrument="NIFTY", force=False):
             info = series_info(df)
             series[sym] = info
             if info["rows"] == 0:
-                issues.append(f"{sym}: no data")
+                target.append(f"{sym}: no data{sfx}")
             elif info["coverage"] < cov:
-                issues.append(f"{sym}: coverage {info['coverage']:.0%} below {cov:.0%}")
+                target.append(f"{sym}: coverage {info['coverage']:.0%} below {cov:.0%}{sfx}")
     listed = listed_strikes(instrument, expiry, strikes, unlisted)
-    return _save(day, instrument, expiry, lot, listed, series, issues, extra={"unlisted": unlisted} if unlisted else None)
+    return _save(day, instrument, expiry, lot, listed, series, issues, warnings,
+                 extra={"unlisted": unlisted} if unlisted else None)
 
 
 def listed_strikes(instrument, expiry, strikes, unlisted):

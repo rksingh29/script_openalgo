@@ -1,0 +1,20 @@
+{
+ "MCX": {
+  "added": "2026-10-20T14:47:55",
+  "expiry_cycle": "monthly",
+  "index_exchange": "NSE",
+  "index_symbol": "MCX",
+  "kind": "stock",
+  "lot_size_seen": 225,
+  "max_expiry_gap_days": 35,
+  "min_option_coverage": 0.8,
+  "min_underlying_bars": 355,
+  "name": "MULTI COMMODITY EXCHANGE",
+  "note": "auto: nearest expiry 2026-10-27, 54 strikes listed, last close 3184.5, 360 bars on 2026-10-19; slippage_pct and min_option_coverage are defaults, adjust after a backfill",
+  "opt_exchange": "NFO",
+  "slippage_pct": 1.0,
+  "strategy_overrides": {},
+  "strike_buffer": 3,
+  "strike_step": 50
+ }
+}

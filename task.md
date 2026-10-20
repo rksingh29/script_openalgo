@@ -226,3 +226,5 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [x] Instruments tab: search OpenAlgo for underlyings with options, add with auto-derived settings (strike step, expiry cycle, bars per day, lot), edit coverage/spread/daily max loss, remove added ones; stored in `strategy_db/instruments.json` (2026-10-20). Tested end to end with HDFCBANK (add -> backfill 3 days -> ORB run, fills/P&L checked) and then removed again
 - [x] Multi-day comparison table shows net (after the estimated spread) next to gross
 - [ ] Measure each added stock's real spread (bid/ask snapshots) instead of the 1.0 % default
+- [x] Single-day data gate: a thin/missing strike OUTSIDE the day's range (the +/- strike_buffer strikes) is a warning, not an issue, same rule as backfill (MCX 2026-10-16 was blocked by the deep-ITM 2950 CE at 68% coverage; 2026-10-20)
+- [x] MCX added to the repo's instrument list (copied from the deployment)
