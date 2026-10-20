@@ -461,14 +461,44 @@ function codeTab(d, kind) {
         " ", h("button", { class: "small", onclick: () => confirm("Restore this version? The current text is saved as a version first.") && pact(async () => { await api(`/api/strategies/${d.id}/code/restore`, { name: v.name }); delete p.draft[key]; }) }, "Restore")))))) : h("div", { class: "small mute" }, "none yet"));
 }
 
+const runVersion = (d, r) => d.code_edited_at && r.created < d.code_edited_at ? "old" : "current";
+const runExpiry = (r) => r.nearest === 0 ? "far" : (r.dte != null ? "nearest" : "unknown");
+function runFilter(d, f) {
+  return d.runs.filter(r => (!f.from || r.day >= f.from) && (!f.to || r.day <= f.to) && (!f.inst || r.instrument === f.inst)
+    && (!f.trades || (f.trades === "with" ? r.trades > 0 : !r.trades))
+    && (!f.pnl || (f.pnl === "profit" ? r.gross_pnl > 0 : f.pnl === "loss" ? r.gross_pnl < 0 : !r.gross_pnl))
+    && (f.win === "" || f.win == null || (r.win_rate != null && r.win_rate * 100 >= +f.win))
+    && (!f.review || (r.verdict || "") === f.review) && (!f.expiry || runExpiry(r) === f.expiry)
+    && (!f.version || runVersion(d, r) === f.version));
+}
 function runsTab(d) {
   if (!d.runs.length) return h("div", { class: "card mute" }, "No runs yet. Use Run at the top of this page.");
-  return h("div", { class: "card" }, h("table", {}, h("thead", {}, h("tr", {}, ["Date", "Instrument", "Trades", "P&L", "Win rate", "Review", "Expiry", "Version", ""].map(t => h("th", {}, t)))),
-    h("tbody", {}, d.runs.map(r => h("tr", { class: "click", onclick: () => openRun(r.id) }, h("td", {}, r.day), h("td", {}, r.instrument), h("td", {}, r.trades), h("td", {}, money(r.gross_pnl)),
+  const f = st.page.rf = st.page.rf || {};
+  const set = (k) => (e) => { f[k] = e.target.value; renderPage(); };
+  const sel = (k, label, opts) => h("select", { class: "small", title: label, onchange: set(k) },
+    h("option", { value: "" }, label), opts.map(([v, t]) => h("option", { value: v, selected: f[k] === v }, t)));
+  const uniq = (xs) => [...new Set(xs)].filter(x => x !== "" && x != null).sort();
+  const rows = runFilter(d, f), total = rows.reduce((a, r) => a + (r.gross_pnl || 0), 0);
+  const filters = h("div", { class: "row small", style: "margin-bottom:8px;flex-wrap:wrap" },
+    h("label", {}, "Date ", h("input", { type: "date", class: "small", value: f.from || "", onchange: set("from") })),
+    h("label", {}, "to ", h("input", { type: "date", class: "small", value: f.to || "", onchange: set("to") })),
+    sel("inst", "all instruments", uniq(d.runs.map(r => r.instrument)).map(x => [x, x])),
+    sel("trades", "any trades", [["with", "with trades"], ["none", "no trades"]]),
+    sel("pnl", "any P&L", [["profit", "profit"], ["loss", "loss"], ["flat", "flat (0)"]]),
+    h("label", {}, "win rate ≥ ", h("input", { type: "number", class: "small", min: 0, max: 100, style: "width:55px", value: f.win ?? "", placeholder: "%", onchange: set("win") })),
+    sel("review", "any review", uniq(d.runs.map(r => r.verdict || "")).map(x => [x, x])),
+    sel("expiry", "any expiry", [["nearest", "nearest"], ["far", "far"], ["unknown", "unknown"]]),
+    sel("version", "any version", [["current", "current"], ["old", "old version"]]),
+    h("button", { class: "small", onclick: () => { st.page.rf = {}; renderPage(); } }, "Clear"),
+    h("span", { class: "mute" }, `${rows.length} of ${d.runs.length} runs · P&L `), money(total),
+    rows.length && rows.length < d.runs.length ? h("button", { class: "danger small", onclick: () => pact(() => deleteRuns(rows.map(r => r.id))) }, `Delete ${rows.length} shown`) : null);
+  return h("div", { class: "card" }, filters, h("table", {}, h("thead", {}, h("tr", {}, ["Date", "Instrument", "Trades", "P&L", "Win rate", "Review", "Expiry", "Version", ""].map(t => h("th", {}, t)))),
+    h("tbody", {}, rows.length ? rows.map(r => h("tr", { class: "click", onclick: () => openRun(r.id) }, h("td", {}, r.day), h("td", {}, r.instrument), h("td", {}, r.trades), h("td", {}, money(r.gross_pnl)),
       h("td", {}, r.win_rate == null ? "–" : Math.round(r.win_rate * 100) + "%"), h("td", {}, r.verdict || ""),
       h("td", { class: "small mute" }, r.nearest === 0 ? `far (${r.dte}d)` : (r.dte != null ? `nearest (${r.dte}d)` : "")),
       h("td", { class: "small mute" }, d.code_edited_at && r.created < d.code_edited_at ? "old version" : "current"),
-      h("td", {}, h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); pact(() => deleteRuns([r.id])); } }, "×")))))));
+      h("td", {}, h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); pact(() => deleteRuns([r.id])); } }, "×"))))
+      : h("tr", {}, h("td", { colspan: 9, class: "mute" }, "No run matches the filter.")))));
 }
 
 function route() {
