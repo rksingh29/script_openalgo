@@ -69,3 +69,6 @@
   `USE_EMA_TREND_FILTER` / `USE_MACD_FILTER` toggles, default OFF, so the base flip signal trades from the
   open; documented as an adaptation. `macd_hist_series` reuses `ema_series` (MACD line = EMA_fast-EMA_slow,
   signal = EMA of the non-None MACD values, hist = MACD-signal), warm by ~mid-session.
+
+### 2026-10-20: confirmation candle (pending signal)
+On a signal, store `self.pending = {side, i, close, sar}` instead of entering; on each later closed candle check it is still on the signal's side and closes beyond the signal close (+ min move %); enter after N such candles, drop it otherwise; a new opposite signal replaces the pending one. Keep it behind a constant that defaults to 0 (off) and compare on all cached days (see parabolic_sar_flip_scalp CONFIRM_BARS, lessons.md 2026-10-20).

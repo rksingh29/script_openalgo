@@ -62,3 +62,5 @@ User decision: Q: Data for 2026-10-17 is incomplete: ['NIFTY index has only 0 ba
   allows up to `MAX_TRADES_PER_DAY`) would show up as a "reversal" even though it is just a normal new
   setup, not a reversal-on-loss like `nifty_direction_ce_pe.py`. Read `reversals` as "0 means exactly
   one BUY order that day" for cycle-less strategies, not as an actual reversal count.
+
+2026-10-20: Confirmation candle after a signal is not a free win. parabolic_sar_flip_scalp with CONFIRM_BARS=1/2 (enter only if the next closed 5m candle(s) stay on the flip side and close beyond the flip close) cut trades by 30-60 % but lowered P&L on NIFTY and BANKNIFTY (the edge is in the early entry) and helped only on the stocks, mostly by paying the estimated spread fewer times. The whipsaw that prompted it (NIFTY 2026-10-19, CE at the 09:35 flip, -3130) was really a wide initial SAR stop (~174 pts, 0.75 %) bleeding for two hours; filter or cap the initial stop distance before adding confirmation delays. Test such filters across all cached days, never on the one day that looked bad.
