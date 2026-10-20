@@ -202,6 +202,20 @@ def series_info(df):
             "coverage": round(len(df) / 375, 3), "gaps": [m.strftime("%H:%M") for m in missing][:60]}
 
 
+VIX_SYMBOL, VIX_EXCHANGE = "INDIAVIX", "NSE_INDEX"     # India VIX 1m candles (verified 2026-10-20: 375 bars a day)
+
+
+def ensure_vix(day, force=False):
+    """India VIX 1m candles for `day` in the cache (one call; empty frame if OpenAlgo has none). Context only: never part of
+    a manifest's completeness, so a day without VIX still backtests."""
+    try:
+        df, _ = _load_or_fetch(VIX_SYMBOL, VIX_SYMBOL, VIX_EXCHANGE, day, force)
+        return df
+    except Exception as e:                                       # VIX is optional; never block a data run on it
+        print(f"  VIX fetch failed for {day}: {e}")
+        return pd.DataFrame()
+
+
 def _load_or_fetch(name, symbol, exchange, day, force):
     p = cache_path(name, day)
     if os.path.exists(p) and not force:
@@ -296,6 +310,7 @@ def ensure_data(day, instrument="NIFTY", force=False):
         issues.append(f"{instrument} index has only {len(idx)} bars (need >= {min_bars(instrument)}); not a trading day or data missing")
         return _save(day, instrument, None, None, [], series, issues)
 
+    ensure_vix(day, force)                                       # chart context for the Signals page (not required)
     daily = fetch_daily(instrument, day)
     prior = daily[daily.index < pd.Timestamp(day)] if daily is not None else None
     series["DAILY"] = {"rows": 0 if prior is None else len(prior), "last_before_day": (prior.index[-1].date().isoformat() if prior is not None and len(prior) else None)}

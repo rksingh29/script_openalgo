@@ -12,7 +12,7 @@ Replay: the strategy runs on the cached candles of --date (FakeClient, no lookah
 Events (one JSON object per line, appended and flushed):
   {"type": "start", ...}, {"type": "bar", "t": "HH:MM", "o","h","l","c"}, {"type": "signal", "id", "t", "action", "symbol",
   "qty", "exchange", "price", "underlying"}, {"type": "log", "t", "msg"}, {"type": "clock", "t"},
-  {"type": "state", "t", "v": {name: value}} (the strategy's own values: indicators, levels, stop/target; when they change), {"type": "end"|"error", ...}
+  {"type": "vix", "t", "c"} (India VIX 1m close, chart context), {"type": "state", "t", "v": {name: value}} (the strategy's own values: indicators, levels, stop/target; when they change), {"type": "end"|"error", ...}
 """
 import argparse
 import importlib
@@ -164,7 +164,11 @@ def run_replay(slug, instrument, day, start, speed, ev):
     under = (cfg["index_symbol"], cfg["index_exchange"])
     start_dt = datetime.combine(day, datetime.strptime(start, "%H:%M").time()) if start else clock.now()
     raw = fake._df(cfg["index_symbol"])
-    state = {"bar": 0, "last_clock": None}
+    from script_openalgo.backtest_core import data_loader as dl
+    vix = dl.load_series(dl.VIX_SYMBOL, day)
+    if vix is None:                                                 # older caches: fetch once (context only, not the strategy)
+        vix = dl.ensure_vix(day)
+    state = {"bar": 0, "last_clock": None, "vix": 0}
     holder = {}
     emit_state = _state_emitter(ev, holder, clock.now)
 
@@ -174,6 +178,11 @@ def run_replay(slug, instrument, day, start, speed, ev):
         for t, r in sub.iloc[state["bar"]:].iterrows():
             ev.emit("bar", t=t.strftime("%H:%M"), o=float(r["open"]), h=float(r["high"]), l=float(r["low"]), c=float(r["close"]))
         state["bar"] = len(sub)
+        if vix is not None and not vix.empty:
+            vsub = vix.loc[:cutoff]
+            for t, r in vsub.iloc[state["vix"]:].iterrows():
+                ev.emit("vix", t=t.strftime("%H:%M"), c=float(r["close"]))
+            state["vix"] = len(vsub)
         tm = clock.now().strftime("%H:%M")
         if tm != state["last_clock"]:
             ev.emit("clock", t=tm, paced=clock.now() >= start_dt)
@@ -211,7 +220,7 @@ def run_live(slug, instrument, ev):
         raise SystemExit("OPENALGO_API_KEY not found (environment or .env)")
     real = api(api_key=key, host=config.host())
     under = (cfg["index_symbol"], cfg["index_exchange"])
-    state = {"last": None, "next_fetch": 0.0}
+    state = {"last": None, "next_fetch": 0.0, "vix_last": None}
     holder = {}
     emit_state = _state_emitter(ev, holder, datetime.now)
 
@@ -241,6 +250,17 @@ def run_live(slug, instrument, ev):
                 continue                                               # unfinished bar, or already sent
             ev.emit("bar", t=t.strftime("%H:%M"), o=float(r["open"]), h=float(r["high"]), l=float(r["low"]), c=float(r["close"]))
             state["last"] = t
+        try:                                                       # India VIX for the chart (context only)
+            vdf = real.history(symbol="INDIAVIX", exchange="NSE_INDEX", interval="1m", start_date=today, end_date=today)
+            if hasattr(vdf, "iterrows"):
+                for ts, r in vdf.iterrows():
+                    t = ts.to_pydatetime().replace(tzinfo=None)
+                    if t + timedelta(minutes=1) > now or (state["vix_last"] and t <= state["vix_last"]):
+                        continue
+                    ev.emit("vix", t=t.strftime("%H:%M"), c=float(r["close"]))
+                    state["vix_last"] = t
+        except Exception:
+            pass
         ev.emit("clock", t=now.strftime("%H:%M"), paced=True)
         emit_state()
 

@@ -71,3 +71,7 @@ Anything else must first be added to the fake client in `backtest_core/fake_clie
 - Liquidity: RELIANCE options trade millions per strike per day (full 375 bars). OFSS options are thin: near-the-money strikes can have 30-60 % of minutes traded; such days are marked incomplete (`min_option_coverage` 0.60 for OFSS). Use `slippage_pct` (instrument table, an ESTIMATE: RELIANCE 0.5 %, OFSS 1.5 % of premium per fill) and read the NET P&L for stocks.
 - Backtest files call `instruments.apply_strategy_overrides(strat, instrument, PARAM_OVERRIDES)`: sets UNDERLYING, INDEX_EXCHANGE and the instrument's `strategy_overrides` (e.g. OFSS `DAILY_MAX_LOSS` 6000) and restores them when another instrument runs in the same process. User PARAM_OVERRIDES win.
 - For a LIVE stock run set `UNDERLYING = "RELIANCE"` and `INDEX_EXCHANGE = "NSE"` in the strategy file (the backtest sets them itself).
+
+### 2026-10-20: India VIX
+- Symbol `INDIAVIX`, exchange `NSE_INDEX` (search "VIX" finds it). `history(interval="1m", source="api")` returns 375 bars a day (09:15-15:29), `volume`/`oi` 0. One range call returns many days.
+- Cached as `data_cache/INDIAVIX_<date>.parquet` by `ensure_data` / `backfill` (`data_loader.ensure_vix`); context only, never part of a manifest's completeness. The Signals chart shows it in a lower panel and per signal.

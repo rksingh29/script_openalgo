@@ -48,6 +48,13 @@ Exit:
     the 15:30 close) regardless of P&L; no new entries after
     NO_NEW_ENTRY_AFTER.
 
+Optional confirmation candle (CONFIRM_BARS, default 0 = off): on a flip the
+signal is only noted; the entry waits for the next CONFIRM_BARS closed candles,
+each of which must stay on the flip's side of the SAR and close beyond the flip
+candle's close (+ CONFIRM_MIN_MOVE_PCT). Otherwise the signal is dropped. The
+stop is the SAR at the confirming candle. Added 2026-10-20 after a whipsaw on
+NIFTY 2026-10-19 (CE bought at the 09:35 flip, the market reversed at once).
+
 Daily safety caps (MAX_TRADES_PER_DAY / DAILY_MAX_LOSS /
 DAILY_PROFIT_TARGET) are the same pattern as the other strategies here;
 they are not part of the source rules.
@@ -112,6 +119,10 @@ MACD_SLOW = 26
 MACD_SIGNAL = 9
 
 # ---- optional quick 1R target (spec: no fixed target by default) ----
+# ---- optional confirmation candle (default OFF = enter on the flip candle's close, as before) ----
+CONFIRM_BARS = 0              # 0 = off; N = after a flip, wait N more closed 5m candles before entering
+CONFIRM_MIN_MOVE_PCT = 0.0    # each confirming close must be beyond the flip candle's close by this % of price
+
 USE_FIXED_TARGET = False
 FIXED_TARGET_R = 1.0          # target = entry +/- this x the initial SAR stop distance
 
@@ -227,6 +238,7 @@ class Strategy:
         self.macd_hist = []
         self.processed_bars = 0
 
+        self.pending = None      # flip waiting for confirmation: {side, i, close, sar}
         self.position = None     # see try_enter() for shape
         self.option_sym = None
         self.lot = None
@@ -365,10 +377,41 @@ class Strategy:
         flip = self.detect_flip(i)
         if self.position:
             self.manage_on_bar_close(i, flip)
+        if CONFIRM_BARS > 0:
+            self.confirm_step(i, flip)
+            return
         # An opposite flip exits above; the same flip is the entry signal for the new side
         # (stop-and-reverse), so re-evaluate entry now that the position may be flat.
         if not self.position and flip:
             self.try_enter(i, flip)
+
+    def confirm_step(self, i, flip):
+        """CONFIRM_BARS > 0: a flip is only noted; the entry needs the next CONFIRM_BARS closed candles to stay on the
+        flip's side of the SAR and to close beyond the flip candle's close (+ CONFIRM_MIN_MOVE_PCT)."""
+        bar = self.bars[i]
+        if flip:                                       # a new flip (also an opposite one) replaces any pending signal
+            if self.pending and self.pending["side"] != flip:
+                log(f"Pending {self.pending['side']} flip from {self.bars[self.pending['i']]['t']:%H:%M} dropped: opposite flip")
+            if not self.position:
+                self.pending = {"side": flip, "i": i, "close": bar["c"], "sar": self.sar[i]}
+                log(f"{flip} SAR flip at {bar['t']:%H:%M} close {bar['c']:.2f}: waiting {CONFIRM_BARS} candle(s) for confirmation")
+            return
+        p = self.pending
+        if not p or self.position:
+            return
+        same_side = self.trend[i] == (1 if p["side"] == "CE" else -1)
+        need = p["close"] * (1 + CONFIRM_MIN_MOVE_PCT / 100) if p["side"] == "CE" else p["close"] * (1 - CONFIRM_MIN_MOVE_PCT / 100)
+        beyond = bar["c"] > need if p["side"] == "CE" else bar["c"] < need
+        if not (same_side and beyond):
+            why = "SAR side lost" if not same_side else f"close {bar['c']:.2f} not {'above' if p['side'] == 'CE' else 'below'} {need:.2f}"
+            log(f"{p['side']} flip from {self.bars[p['i']]['t']:%H:%M} NOT confirmed at {bar['t']:%H:%M}: {why}; no trade")
+            self.pending = None
+            return
+        if i - p["i"] < CONFIRM_BARS:
+            return                                     # confirmed so far, more candles to wait for
+        log(f"{p['side']} flip from {self.bars[p['i']]['t']:%H:%M} confirmed at {bar['t']:%H:%M} (close {bar['c']:.2f} vs {p['close']:.2f})")
+        self.pending = None
+        self.try_enter(i, p["side"])
 
     def manage_on_bar_close(self, i, flip):
         """Opposite-flip exit + ratchet the trailing SAR stop toward price."""

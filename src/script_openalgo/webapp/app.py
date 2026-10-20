@@ -463,6 +463,7 @@ def signals_view(jid):
                     "start": next((e for e in ev if e["type"] == "start"), {}),
                     "clock": next((e["t"] for e in reversed(ev) if e["type"] == "clock"), None),
                     "bars": [e for e in ev if e["type"] == "bar"],
+                    "vix": [{"t": e["t"], "c": e["c"]} for e in ev if e["type"] == "vix"],
                     "states": [{"t": e["t"], "v": e["v"]} for e in ev if e["type"] == "state"],
                     "signals": [dict(e, acted=acted.get(str(e["id"]))) for e in ev if e["type"] == "signal"],
                     "logs": [e for e in ev if e["type"] == "log"][-80:], "end": end, "log_tail": log_tail})

@@ -347,6 +347,12 @@ function sigValues(v) {           // legend (click to show/hide a line) + the la
   };
   return h("div", { class: "small", style: "margin:4px 0" }, h("span", { class: "mute" }, `Strategy values at ${last.t}: `), Object.entries(last.v).map(cell));
 }
+function vixAt(v, t) {           // India VIX close of the last 1m candle at or before time t ("HH:MM[:SS]")
+  const vx = v.vix || [], k = t.slice(0, 5);
+  let val = null;
+  for (const p of vx) { if (p.t <= k) val = p.c; else break; }
+  return val == null ? "" : val.toFixed(2);
+}
 function sigChart(v) {
   const bars = v.bars, W = 760, H = 320, M = { l: 52, r: 10, t: 10, b: 22 };
   if (!bars.length) return h("div", { class: "mute small", style: "padding:20px 0" }, v.status === "running" ? "Waiting for the first completed candle…" : "No candles.");
@@ -378,7 +384,18 @@ function sigChart(v) {
     const path = !buy ? `M${cx - 5},${cy - 5}L${cx + 5},${cy + 5}M${cx - 5},${cy + 5}L${cx + 5},${cy - 5}` : ce ? `M${cx},${cy - 7}L${cx - 6},${cy + 5}L${cx + 6},${cy + 5}Z` : `M${cx},${cy + 7}L${cx - 6},${cy - 5}L${cx + 6},${cy - 5}Z`;
     body += `<path d="${path}" fill="${col}" stroke="${col}" stroke-width="2"/><text x="${cx.toFixed(1)}" y="${(buy && !ce ? cy - 9 : cy + 18).toFixed(1)}" font-size="10" font-weight="600" text-anchor="middle" fill="${col}">${label} #${s.id}</text>`;
   }
-  const d = h("div", {}); d.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="color:var(--ink)">${g}${body}</svg>`;
+  let vixSvg = "", VH = 0;
+  const vx = (v.vix || []);
+  if (vx.length) {                                                // India VIX panel on the same time axis
+    VH = 96; const top = H + 6, vlo = Math.min(...vx.map(p => p.c)), vhi = Math.max(...vx.map(p => p.c)), span = (vhi - vlo) || 0.1;
+    const vy = (val) => top + 8 + (1 - (val - vlo) / span) * (VH - 26);
+    vixSvg += `<rect x="${M.l}" y="${top}" width="${W - M.l - M.r}" height="${VH - 10}" fill="currentColor" opacity=".03"/>`;
+    [vlo, (vlo + vhi) / 2, vhi].forEach(val => vixSvg += `<text x="${M.l - 4}" y="${(vy(val) + 3).toFixed(1)}" font-size="10" text-anchor="end" fill="currentColor" opacity=".7">${val.toFixed(2)}</text>`);
+    vixSvg += `<text x="${M.l + 4}" y="${top + 12}" font-size="10" font-weight="600" fill="#8e44ad">India VIX ${vx[0].c.toFixed(2)} → ${vx[vx.length - 1].c.toFixed(2)}</text>`;
+    vixSvg += `<polyline fill="none" stroke="#8e44ad" stroke-width="1.5" points="${vx.map(p => x(tm(p.t) + 0.5).toFixed(1) + "," + vy(p.c).toFixed(1)).join(" ")}"/>`;
+    for (const s of sigs) { const cx = x(tm(s.t)); vixSvg += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${top}" y2="${top + VH - 10}" stroke="${s.action === "BUY" ? (/CE$/.test(s.symbol) ? GREEN : RED) : "#667085"}" stroke-dasharray="2 2" opacity=".7"/>`; }
+  }
+  const d = h("div", {}); d.innerHTML = `<svg viewBox="0 0 ${W} ${H + VH}" width="100%" style="color:var(--ink)">${g}${body}${vixSvg}</svg>`;
   return d;
 }
 function signalsView() {
@@ -427,6 +444,7 @@ function signalsView() {
     const sendable = (s) => live && !s.acted && v.status === "running";
     const rows = v.signals.slice().reverse().map(s => h("tr", {}, h("td", {}, "#" + s.id), h("td", {}, s.t), h("td", {}, h("b", { class: s.action === "BUY" ? (/CE$/.test(s.symbol) ? "pos" : "neg") : "" }, s.action)),
       h("td", {}, s.symbol), h("td", {}, s.qty), h("td", {}, s.price ?? "–"), h("td", { class: "small mute" }, s.underlying ?? ""),
+      h("td", { class: "small mute" }, vixAt(v, s.t)),
       h("td", {}, s.acted ? h("span", { class: "small" }, `sent ${s.acted.paper ? "(paper)" : "(LIVE)"} #${s.acted.orderid || ""}`)
         : live ? h("button", { class: "primary small", disabled: !sendable(s), title: v.status === "running" ? "Send this order to OpenAlgo now (market order)" : "session stopped",
             onclick: () => confirm(`Send ${s.action} ${s.qty} ${s.symbol} as a MARKET order to OpenAlgo${S.mode && S.mode.analyze_mode ? " (Analyzer: paper)" : " (LIVE: real money)"}?`) && act(() => api(`/api/signals/${v.id}/act`, { signal_id: s.id })) }, "Act")
@@ -441,9 +459,9 @@ function signalsView() {
       v.end && v.end.type === "error" ? h("div", { class: "banner small" }, "Stopped with an error: " + v.end.message) : null,
       v.log_tail ? h("pre", { class: "small" }, v.log_tail) : null,
       sigChart(v), sigValues(v),
-      h("div", { class: "mute small" }, "▲ CE buy (bullish) · ▼ PE buy (bearish) · ✕ exit, drawn at the underlying's price when the signal fired."),
+      h("div", { class: "mute small" }, "▲ CE buy (bullish) · ▼ PE buy (bearish) · ✕ exit, drawn at the underlying's price when the signal fired. Lower panel: India VIX (dashed lines = signal times). Rising VIX lifts option premiums, which helps an option buyer; flat or falling VIX lets time decay win, so a sideways market costs money even without an adverse move."),
       h("h4", {}, `Signals (${v.signals.length})`),
-      v.signals.length ? h("table", {}, h("thead", {}, h("tr", {}, ["#", "Time", "Action", "Symbol", "Qty", "Price", "Underlying", ""].map(t => h("th", {}, t)))), h("tbody", {}, rows)) : h("div", { class: "mute small" }, "No signal yet."),
+      v.signals.length ? h("table", {}, h("thead", {}, h("tr", {}, ["#", "Time", "Action", "Symbol", "Qty", "Price", "Underlying", "VIX", ""].map(t => h("th", {}, t)))), h("tbody", {}, rows)) : h("div", { class: "mute small" }, "No signal yet."),
       h("h4", {}, "Strategy log"), h("pre", { class: "small", style: "max-height:260px;overflow:auto" }, v.logs.slice().reverse().map(l => `${l.t} | ${l.msg}`).join("\n") || "(empty)"));
   }
   return h("div", {}, modeBanner, form, list, detail);

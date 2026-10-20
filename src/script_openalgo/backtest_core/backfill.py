@@ -83,6 +83,13 @@ def backfill(instrument, expiry=None, max_days=None, force=False):
         for d in idx_missing:
             if d in got and not got[d].empty:
                 got[d].to_parquet(dl.cache_path(cfg["index_symbol"], d))
+    # 1b. India VIX 1m for all days (one call; context for the Signals chart, not part of completeness)
+    vix_missing = [d for d in days if force or not os.path.exists(dl.cache_path(dl.VIX_SYMBOL, d))]
+    if vix_missing:
+        got = dl.fetch_candles_range(dl.VIX_SYMBOL, dl.VIX_EXCHANGE, min(vix_missing), max(vix_missing))
+        for d in vix_missing:
+            if d in got and not got[d].empty:
+                got[d].to_parquet(dl.cache_path(dl.VIX_SYMBOL, d))
     # 2. every option series once, split per day
     fetched = calls = 0
     for strike in all_strikes:

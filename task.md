@@ -234,3 +234,5 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [x] Signals chart: always candles (it switched to a line above 200 bars); strategy values (EMA, VWAP, OR high/low, Camarilla levels, stop/target) as lines, others (RSI...) in a values panel; click to hide/show
 - [ ] Signals: values a strategy only keeps in local variables (not on self) cannot be shown; such strategies would need to store them on self
 - [x] Signals: per-session strategy parameters (NAME=value, validated against the strategy file; shown in the session list/header). Checked: parabolic_sar_flip_scalp NIFTY 2026-10-19 replay, default -3129.75 vs CONFIRM_BARS=2 +351 (same as the backtest comparison)
+- [x] India VIX (INDIAVIX, NSE_INDEX) cached per day by ensure_data/backfill (context only); Signals chart lower VIX panel + VIX per signal (2026-10-20); 29 cached days back-filled with VIX
+- [ ] Strategy filters to test across all days: late-entry (move already extended, e.g. > k x ATR since the swing), chop/sideways (ADX or choppiness), VIX trend at entry for option buyers, max initial stop distance
