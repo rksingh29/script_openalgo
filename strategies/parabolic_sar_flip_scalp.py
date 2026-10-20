@@ -55,6 +55,12 @@ candle's close (+ CONFIRM_MIN_MOVE_PCT). Otherwise the signal is dropped. The
 stop is the SAR at the confirming candle. Added 2026-10-20 after a whipsaw on
 NIFTY 2026-10-19 (CE bought at the 09:35 flip, the market reversed at once).
 
+Optional entry filters (default OFF): USE_LATE_ENTRY_FILTER skips a flip when
+|price - SAR| > LATE_ENTRY_ATR_MULT x ATR(ATR_PERIOD) of the 5m candles (at a
+flip the SAR sits at the previous swing extreme, so this is both "the move has
+already run" and "the stop is far"); VIX_NEAR_HIGH_PCT skips when India VIX is in
+the top N % of its range so far today; VIX_MAX skips above a VIX level.
+
 Daily safety caps (MAX_TRADES_PER_DAY / DAILY_MAX_LOSS /
 DAILY_PROFIT_TARGET) are the same pattern as the other strategies here;
 they are not part of the source rules.
@@ -122,6 +128,15 @@ MACD_SIGNAL = 9
 # ---- optional confirmation candle (default OFF = enter on the flip candle's close, as before) ----
 CONFIRM_BARS = 0              # 0 = off; N = after a flip, wait N more closed 5m candles before entering
 CONFIRM_MIN_MOVE_PCT = 0.0    # each confirming close must be beyond the flip candle's close by this % of price
+
+# ---- optional entry filters (all default OFF; compared on all cached days 2026-10-20) ----
+USE_LATE_ENTRY_FILTER = False # skip if |price - SAR| > LATE_ENTRY_ATR_MULT x ATR: the move already ran / the stop is far
+LATE_ENTRY_ATR_MULT = 4.0
+ATR_PERIOD = 14               # Wilder ATR on the 5m candles of the day (simple average until it warms up)
+VIX_SYMBOL = "INDIAVIX"       # India VIX (NSE_INDEX), 1m candles
+VIX_EXCHANGE = "NSE_INDEX"
+VIX_NEAR_HIGH_PCT = 0         # 0 = off; skip if VIX is in the top N % of its range so far today (a spike just happened)
+VIX_MAX = 0                   # 0 = off; skip if India VIX is above this level
 
 USE_FIXED_TARGET = False
 FIXED_TARGET_R = 1.0          # target = entry +/- this x the initial SAR stop distance
@@ -327,6 +342,66 @@ class Strategy:
         self.macd_hist = macd_hist_series(closes, MACD_FAST, MACD_SLOW, MACD_SIGNAL) \
             if USE_MACD_FILTER else []
 
+    def atr(self, i):
+        """Wilder ATR of the 5m candles up to bar i (today only); simple mean of true ranges while warming up."""
+        trs = []
+        for k in range(1, i + 1):
+            b, p = self.bars[k], self.bars[k - 1]
+            trs.append(max(b["h"] - b["l"], abs(b["h"] - p["c"]), abs(b["l"] - p["c"])))
+        if not trs:
+            return None
+        if len(trs) < ATR_PERIOD:
+            return sum(trs) / len(trs)
+        a = sum(trs[:ATR_PERIOD]) / ATR_PERIOD
+        for tr in trs[ATR_PERIOD:]:
+            a = (a * (ATR_PERIOD - 1) + tr) / ATR_PERIOD
+        return a
+
+    def vix_now(self):
+        """(last, low so far, high so far) of India VIX today from completed 1m candles, or None."""
+        today = self.now().strftime("%Y-%m-%d")
+        try:
+            df = self.c.history(symbol=VIX_SYMBOL, exchange=VIX_EXCHANGE, interval="1m",
+                                 start_date=today, end_date=today, source=HISTORY_SOURCE)
+        except Exception as e:
+            log(f"VIX history exception: {e}")
+            return None
+        if not hasattr(df, "empty") or df.empty:
+            return None
+        now = self.now()
+        rows = [(ts, r) for ts, r in df.iterrows()
+                if (ts.to_pydatetime().replace(tzinfo=None) + timedelta(minutes=1)) <= now]
+        if not rows:
+            return None
+        closes = [float(r["close"]) for _, r in rows]
+        return closes[-1], min(float(r["low"]) for _, r in rows), max(float(r["high"]) for _, r in rows)
+
+    def entry_filters_ok(self, side, i, idx_price, sar):
+        """Late-entry and VIX filters (all off by default). True = take the trade."""
+        if USE_LATE_ENTRY_FILTER:
+            a = self.atr(i)
+            if a:
+                dist = abs(idx_price - sar)
+                if dist > LATE_ENTRY_ATR_MULT * a:
+                    log(f"Entry skipped (late entry): price {idx_price:.2f} is {dist:.1f} pts from the SAR "
+                        f"= {dist / a:.1f} x ATR {a:.1f} > {LATE_ENTRY_ATR_MULT}")
+                    return False
+        if VIX_NEAR_HIGH_PCT or VIX_MAX:
+            v = self.vix_now()
+            if v is None:
+                log("VIX filter: no VIX data, filter not applied")
+                return True
+            last, lo, hi = v
+            if VIX_MAX and last > VIX_MAX:
+                log(f"Entry skipped (VIX): India VIX {last:.2f} > {VIX_MAX}")
+                return False
+            if VIX_NEAR_HIGH_PCT and hi - lo >= 0.1:
+                pos = (last - lo) / (hi - lo) * 100
+                if pos >= 100 - VIX_NEAR_HIGH_PCT:
+                    log(f"Entry skipped (VIX near day high): {last:.2f} in range {lo:.2f}-{hi:.2f} ({pos:.0f} %)")
+                    return False
+        return True
+
     # ---------- signal ----------
     def detect_flip(self, i):
         """Returns 'CE' (flip up) / 'PE' (flip down) if bar i is a fresh SAR flip, else None."""
@@ -485,6 +560,8 @@ class Strategy:
         stop_distance = abs(idx_price - stop_price)
         if stop_distance <= 0:
             log("Entry aborted: zero stop distance (price at SAR)")
+            return
+        if not self.entry_filters_ok(side, i, idx_price, sar):
             return
         try:
             self.resolve_atm(side)
