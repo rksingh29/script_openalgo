@@ -297,7 +297,7 @@ function resultsView() {
 
 // ---------- signals: run a strategy live or replay a cached day; its orders appear as signals you can act on ----------
 function sigState() {
-  return st.sig = st.sig || { form: { strategy_id: "", instrument: "NIFTY", mode: "live", date: "", time: "09:15", speed: "30" }, sel: null, view: null, sessions: null, mode: null, modeAt: 0 };
+  return st.sig = st.sig || { form: { strategy_id: "", instrument: "NIFTY", mode: "live", date: "", time: "09:15", speed: "30" }, sel: null, view: null, sessions: null, mode: null, modeAt: 0, hide: {} };
 }
 async function loadSignals() {
   const S = sigState();
@@ -317,22 +317,60 @@ function sigPnl(sigs) {          // FIFO pairing of paper fills per symbol: real
   const openQty = Object.entries(open).map(([k, q]) => [k, q.reduce((a, l) => a + l.qty, 0)]).filter(([, n]) => n > 0);
   return { pnl, openQty };
 }
+const SIG_COLORS = ["#2457d6", "#b8860b", "#8e44ad", "#d35400", "#16a085", "#c2185b", "#5d6d7e", "#7cb342", "#0097a7", "#6d4c41"];
+function sigSeries(v) {           // {name: {pts: [[minute, value]], color, dash}} for the strategy values on the underlying's price scale
+  if (!v.bars.length || !v.states.length) return {};
+  const lo = Math.min(...v.bars.map(b => b.l)), hi = Math.max(...v.bars.map(b => b.h)), pad = (hi - lo) * 0.6 + hi * 0.003;
+  const tm = (t) => { const p = t.split(":"); return +p[0] * 60 + +p[1]; };
+  const keys = [...new Set(v.states.flatMap(s => Object.keys(s.v)))].sort();
+  const out = {};
+  keys.forEach(k => {
+    const pts = [];
+    v.states.forEach(s => {                                      // a value that disappears (position closed) ends its line: [t, null]
+      const val = s.v[k], prev = pts.length ? pts[pts.length - 1][1] : undefined;
+      if (typeof val === "number") { if (prev !== val) pts.push([tm(s.t), val]); }
+      else if (prev != null) pts.push([tm(s.t), null]);
+    });
+    const nums = pts.filter(p => p[1] != null), ok = (p) => p[1] == null || (p[1] >= lo - pad && p[1] <= hi + pad);
+    if (nums.length && nums.filter(ok).length >= nums.length * 0.8) out[k] = { pts: pts.filter(ok) };
+  });
+  Object.keys(out).forEach((k, i) => { out[k].color = SIG_COLORS[i % SIG_COLORS.length]; out[k].dash = /stop|target|levels\.|^or[hl]$|pivot/.test(k); });
+  return out;
+}
+function sigValues(v) {           // legend (click to show/hide a line) + the latest value of everything the strategy keeps
+  if (!v.states.length) return h("div", { class: "mute small" }, "The strategy keeps no values on itself yet (indicators appear once it computes them).");
+  const series = sigSeries(v), last = v.states[v.states.length - 1];
+  const cell = ([k, val]) => {
+    const s = series[k], hidden = st.sig.hide[k];
+    return h("span", { class: "chip" + (s ? "" : " mute"), style: s ? `border-left:4px solid ${s.color};cursor:pointer;opacity:${hidden ? .45 : 1}` : "", title: s ? "click to show/hide on the chart" : "not on the price scale",
+      onclick: s ? () => { st.sig.hide[k] = !hidden; render(); } : null }, `${k} `, h("b", {}, typeof val === "number" ? (Math.abs(val) >= 100 ? val.toFixed(2) : +val.toFixed(4)) : String(val)));
+  };
+  return h("div", { class: "small", style: "margin:4px 0" }, h("span", { class: "mute" }, `Strategy values at ${last.t}: `), Object.entries(last.v).map(cell));
+}
 function sigChart(v) {
-  const bars = v.bars, W = 760, H = 280, M = { l: 52, r: 10, t: 10, b: 22 };
+  const bars = v.bars, W = 760, H = 320, M = { l: 52, r: 10, t: 10, b: 22 };
   if (!bars.length) return h("div", { class: "mute small", style: "padding:20px 0" }, v.status === "running" ? "Waiting for the first completed candle…" : "No candles.");
   const tm = (t) => { const p = t.split(":"); return +p[0] * 60 + +p[1] + (p[2] ? +p[2] / 60 : 0); };
   const sigs = v.signals.filter(s => s.underlying != null);
   const x0 = Math.min(555, tm(bars[0].t)), x1 = Math.max(930, tm(bars[bars.length - 1].t) + 1);
-  const lo = Math.min(...bars.map(b => b.l), ...sigs.map(s => s.underlying)), hi = Math.max(...bars.map(b => b.h), ...sigs.map(s => s.underlying));
+  const series = sigSeries(v);
+  const sv = Object.values(series).flatMap(s => s.pts.map(p => p[1]));
+  const lo = Math.min(...bars.map(b => b.l), ...sigs.map(s => s.underlying), ...sv), hi = Math.max(...bars.map(b => b.h), ...sigs.map(s => s.underlying), ...sv);
   const x = (m) => M.l + (m - x0) / (x1 - x0) * (W - M.l - M.r), y = (v2) => H - M.b - (v2 - lo) / ((hi - lo) || 1) * (H - M.t - M.b);
   let g = "";
   for (let i = 0; i <= 4; i++) { const val = lo + (hi - lo) * i / 4; g += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(val).toFixed(1)}" y2="${y(val).toFixed(1)}" stroke="currentColor" opacity=".12"/><text x="${M.l - 4}" y="${(y(val) + 3).toFixed(1)}" font-size="10" text-anchor="end" fill="currentColor" opacity=".7">${val.toFixed(val > 999 ? 0 : 1)}</text>`; }
   for (let m = 560; m <= 930; m += 30) g += `<text x="${x(m).toFixed(1)}" y="${H - 6}" font-size="10" text-anchor="middle" fill="currentColor" opacity=".7">${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}</text>`;
   const GREEN = "#0b7a46", RED = "#c0262d", bw = Math.max(1, (W - M.l - M.r) / (x1 - x0) * 0.7);
   let body = "";
-  if (bars.length <= 200) for (const b of bars) { const cx = x(tm(b.t) + 0.5), col = b.c >= b.o ? GREEN : RED;
+  for (const b of bars) { const cx = x(tm(b.t) + 0.5), col = b.c >= b.o ? GREEN : RED;           // always candles
     body += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${y(b.h).toFixed(1)}" y2="${y(b.l).toFixed(1)}" stroke="${col}"/><rect x="${(cx - bw / 2).toFixed(1)}" y="${y(Math.max(b.o, b.c)).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, Math.abs(y(b.o) - y(b.c))).toFixed(1)}" fill="${col}"/>`; }
-  else body += `<polyline fill="none" stroke="#2457d6" stroke-width="1.4" points="${bars.map(b => x(tm(b.t) + 0.5).toFixed(1) + "," + y(b.c).toFixed(1)).join(" ")}"/>`;
+  const tEnd = tm(bars[bars.length - 1].t) + 1;
+  for (const [k, s] of Object.entries(series)) {                 // the strategy's own values on the price scale, as step lines
+    if (st.sig.hide[k]) continue;
+    let d = "";
+    s.pts.forEach(([t, val], i) => { if (val == null) return; const xa = x(t), xb = x(i + 1 < s.pts.length ? s.pts[i + 1][0] : tEnd); d += `M${xa.toFixed(1)},${y(val).toFixed(1)}H${xb.toFixed(1)}`; });
+    body += `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="1.6" ${s.dash ? 'stroke-dasharray="5 3"' : ""} opacity=".9"/>`;
+  }
   if (v.start && v.start.start && v.meta.mode === "replay") { const sx = x(tm(v.start.start)); body += `<line x1="${sx.toFixed(1)}" x2="${sx.toFixed(1)}" y1="${M.t}" y2="${H - M.b}" stroke="#b8860b" stroke-dasharray="4 3"/><text x="${(sx + 3).toFixed(1)}" y="${M.t + 10}" font-size="10" fill="#b8860b">replay from ${v.start.start}</text>`; }
   for (const s of sigs) {
     const cx = x(tm(s.t)), cy = y(s.underlying), ce = /CE$/.test(s.symbol), buy = s.action === "BUY";
@@ -397,7 +435,7 @@ function signalsView() {
         p.openQty.length ? h("span", { class: "small warn" }, " · open: " + p.openQty.map(([k, n]) => `${k} ${n}`).join(", ")) : null),
       v.end && v.end.type === "error" ? h("div", { class: "banner small" }, "Stopped with an error: " + v.end.message) : null,
       v.log_tail ? h("pre", { class: "small" }, v.log_tail) : null,
-      sigChart(v),
+      sigChart(v), sigValues(v),
       h("div", { class: "mute small" }, "▲ CE buy (bullish) · ▼ PE buy (bearish) · ✕ exit, drawn at the underlying's price when the signal fired."),
       h("h4", {}, `Signals (${v.signals.length})`),
       v.signals.length ? h("table", {}, h("thead", {}, h("tr", {}, ["#", "Time", "Action", "Symbol", "Qty", "Price", "Underlying", ""].map(t => h("th", {}, t)))), h("tbody", {}, rows)) : h("div", { class: "mute small" }, "No signal yet."),

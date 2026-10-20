@@ -374,7 +374,7 @@ The **Signals** tab runs a strategy's real code and shows its orders as **signal
    - **replay a day**: pick a date that has complete cached data (Data tab), a **from** time and a **speed**. The strategy runs at full speed up to the from time (so its indicators and opening range are correct), then the chart builds up from that moment at the chosen speed (1x is real time, 60x turns an hour into a minute, "no pause" is instant).
 3. Click **Start**. The session appears in the list; click it to see it. **Stop** ends it.
 
-What you see: the underlying's 1-minute candles, markers for every signal (▲ CE buy, ▼ PE buy, ✕ exit, at the underlying's price when it fired), the signal table, the strategy's own log, and the paper P&L of closed signals.
+What you see: the underlying's 1-minute candles, the strategy's own values drawn as lines (EMAs, VWAP, opening range high/low, Camarilla levels, the position's stop and target: whatever the strategy keeps; click a value under the chart to hide or show its line; values not on the price scale, such as RSI or ADX, are listed there too), markers for every signal (▲ CE buy, ▼ PE buy, ✕ exit, at the underlying's price when it fired), the signal table, the strategy's own log, and the paper P&L of closed signals.
 
 **Act** (live sessions only) sends that signal to OpenAlgo as a MARKET order, once. Safety:
 - With OpenAlgo's **Analyzer (paper) mode** on, the order is a paper order. The banner at the top shows the mode.

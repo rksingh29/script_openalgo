@@ -10,7 +10,8 @@ Replay: the strategy runs on the cached candles of --date (FakeClient, no lookah
 
 Events (one JSON object per line, appended and flushed):
   {"type": "start", ...}, {"type": "bar", "t": "HH:MM", "o","h","l","c"}, {"type": "signal", "id", "t", "action", "symbol",
-  "qty", "exchange", "price", "underlying"}, {"type": "log", "t", "msg"}, {"type": "clock", "t"}, {"type": "end"|"error", ...}
+  "qty", "exchange", "price", "underlying"}, {"type": "log", "t", "msg"}, {"type": "clock", "t"},
+  {"type": "state", "t", "v": {name: value}} (the strategy's own values: indicators, levels, stop/target; when they change), {"type": "end"|"error", ...}
 """
 import argparse
 import importlib
@@ -30,6 +31,22 @@ class Events:
     def emit(self, kind, **data):
         self.f.write(json.dumps({"type": kind, **data}, default=str) + "\n")
         self.f.flush()
+
+
+def _state_emitter(ev, holder, now):
+    last = {"v": None}
+
+    def emit_state():
+        if holder.get("s") is None:
+            return
+        try:
+            snap = snapshot(holder["s"])
+        except Exception:                                          # never let a display helper stop the strategy
+            return
+        if snap != last["v"]:
+            ev.emit("state", t=now().strftime("%H:%M"), v=snap)
+            last["v"] = snap
+    return emit_state
 
 
 class SignalRecorder:
@@ -59,6 +76,42 @@ class SignalRecorder:
         return self._inner.orderstatus(order_id=order_id, strategy=strategy, **kw)
 
 
+SKIP_ATTRS = {"c", "now", "sleep", "bars", "ha_bars", "htf_bars", "warm", "lot", "processed_bars", "option_sym"}
+
+
+def _num(v):
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return round(float(v), 4)
+    if isinstance(v, (list, tuple)) and v:                       # indicator series aligned with bars: latest value
+        for x in reversed(v[-5:]):
+            if isinstance(x, (int, float)) and not isinstance(x, bool):
+                return round(float(x), 4)
+    return None
+
+
+def snapshot(s):
+    """The strategy's current values: numbers, latest value of number lists, numbers inside small dicts (levels, position
+    stop/target), and flags. Only attributes the strategy keeps on `self` are visible."""
+    out = {}
+    for k, v in vars(s).items():
+        if k.startswith("_") or k in SKIP_ATTRS:
+            continue
+        if isinstance(v, dict):
+            for k2, v2 in list(v.items())[:12]:
+                n = _num(v2)
+                if n is not None:
+                    out[f"{k}.{k2}"] = n
+            continue
+        n = _num(v)
+        if n is not None:
+            out[k] = n
+        elif isinstance(v, bool):
+            out[k] = v
+    return out
+
+
 def _load_strategy(slug, instrument):
     sys.path.insert(0, config.strategies_dir())
     strat = importlib.import_module(slug)
@@ -79,6 +132,8 @@ def run_replay(slug, instrument, day, start, speed, ev):
     start_dt = datetime.combine(day, datetime.strptime(start, "%H:%M").time()) if start else clock.now()
     raw = fake._df(cfg["index_symbol"])
     state = {"bar": 0, "last_clock": None}
+    holder = {}
+    emit_state = _state_emitter(ev, holder, clock.now)
 
     def emit_bars():
         cutoff = clock.now() - timedelta(minutes=1)                    # completed 1m bars only
@@ -90,6 +145,7 @@ def run_replay(slug, instrument, day, start, speed, ev):
         if tm != state["last_clock"]:
             ev.emit("clock", t=tm, paced=clock.now() >= start_dt)
             state["last_clock"] = tm
+            emit_state()
 
     def sleeper(seconds):
         before = clock.now()
@@ -105,6 +161,7 @@ def run_replay(slug, instrument, day, start, speed, ev):
     strat.log = log
     client = SignalRecorder(fake, ev, clock.now, lambda s, e: fake._price(s), under)
     s = strat.Strategy(client, clock=clock.now, sleeper=sleeper)
+    holder["s"] = s
     fake.strategy = s
     ev.emit("start", mode="replay", strategy=slug, instrument=instrument, date=day.isoformat(), start=start, speed=speed,
             underlying=cfg["index_symbol"], lot=fake.lot, expiry=fake.expiry_date.isoformat())
@@ -122,6 +179,8 @@ def run_live(slug, instrument, ev):
     real = api(api_key=key, host=config.host())
     under = (cfg["index_symbol"], cfg["index_exchange"])
     state = {"last": None, "next_fetch": 0.0}
+    holder = {}
+    emit_state = _state_emitter(ev, holder, datetime.now)
 
     def price_of(symbol, exchange):
         try:
@@ -150,6 +209,7 @@ def run_live(slug, instrument, ev):
             ev.emit("bar", t=t.strftime("%H:%M"), o=float(r["open"]), h=float(r["high"]), l=float(r["low"]), c=float(r["close"]))
             state["last"] = t
         ev.emit("clock", t=now.strftime("%H:%M"), paced=True)
+        emit_state()
 
     def sleeper(seconds):
         end = time.time() + max(0.0, seconds)
@@ -163,6 +223,7 @@ def run_live(slug, instrument, ev):
     strat.log = log
     client = SignalRecorder(real, ev, datetime.now, price_of, under)
     s = strat.Strategy(client, clock=datetime.now, sleeper=sleeper)
+    holder["s"] = s
     ev.emit("start", mode="live", strategy=slug, instrument=instrument, date=date.today().isoformat(),
             underlying=under[0], host=config.host())
     emit_bars(force=True)

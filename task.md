@@ -231,3 +231,5 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [x] Signals tab (2026-10-20): choose strategy, instrument, live or replay (date, from time, speed), Start/Stop; chart of the underlying with signal markers, signal table, strategy log, paper P&L; Act sends a live signal to OpenAlgo (Analyzer mode only unless allow_live_orders). Tested: replay ORB RELIANCE 2026-10-12 (same signals as the backtest), stop, live start (market holiday: no candles, ended at square-off), act refused for replay, session delete removes the events file
 - [ ] Signals: test a live session during market hours, and Act in Analyzer mode (not done: 2026-10-20 had no market data)
 - [ ] Signals: follow the real position after Act (today the page only shows paper signals)
+- [x] Signals chart: always candles (it switched to a line above 200 bars); strategy values (EMA, VWAP, OR high/low, Camarilla levels, stop/target) as lines, others (RSI...) in a values panel; click to hide/show
+- [ ] Signals: values a strategy only keeps in local variables (not on self) cannot be shown; such strategies would need to store them on self
