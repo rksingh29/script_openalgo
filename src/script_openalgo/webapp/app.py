@@ -141,6 +141,16 @@ def run_detail(rid):
     return jsonify(d)
 
 
+@app.get("/api/runs/<int:rid>/chart")
+def run_chart(rid):
+    d = run_detail(rid)
+    if isinstance(d, tuple):
+        return d
+    r = d.get_json()
+    from script_openalgo.webapp import chart
+    return jsonify(chart.build(db.ws_paths(ws())[1], r["instrument"], r["day"], r["trade_rows"]))
+
+
 @app.post("/api/runs/<int:rid>/delete")
 def run_delete(rid):
     con = conn()

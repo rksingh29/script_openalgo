@@ -196,7 +196,71 @@ async function openRun(id) {
   const t = r.trade_rows.length ? h("table", {}, h("thead", {}, h("tr", {}, ["Cycle", "Symbol", "Qty", "Entry", "Exit", "P&L"].map(x => h("th", {}, x)))),
     h("tbody", {}, r.trade_rows.map(x => h("tr", {}, h("td", {}, x.cycle), h("td", {}, x.symbol), h("td", {}, x.qty), h("td", {}, `${x.entry_time} @ ${x.entry_price}`), h("td", {}, `${x.exit_time} @ ${x.exit_price}`), h("td", {}, money(+x.gross_pnl)))))) : h("div", { class: "mute" }, "No trades.");
   showModal(h("div", {}, h("div", { class: "row" }, h("h3", { style: "margin:0" }, `Run ${r.day} · ${r.instrument}`), h("span", { style: "flex:1" }), h("button", { onclick: closeModal }, "Close")),
-    r.summary ? h("pre", {}, JSON.stringify(r.summary, null, 1)) : null, t, h("h4", {}, "Log (tail)"), h("pre", {}, r.log_tail || "no log")));
+    r.summary ? h("pre", {}, JSON.stringify(r.summary, null, 1)) : null, t, chartBox(id), h("h4", {}, "Log (tail)"), h("pre", {}, r.log_tail || "no log")));
+}
+
+// ---------- trade chart: index for the day + each trade's option premium, with what-if exits/entries ----------
+function chartBox(runId) {
+  const box = h("div", {}, h("h4", {}, "Chart"), h("div", { class: "mute small" }, "loading…"));
+  api("/api/runs/" + runId + "/chart").then(c => box.replaceChildren(h("h4", {}, "Chart"), chartView(c)))
+    .catch(() => box.replaceChildren(h("h4", {}, "Chart"), h("div", { class: "mute small" }, "Chart data not in the candle cache for this day.")));
+  return box;
+}
+const tmin = (t) => { const p = t.split(":"); return +p[0] * 60 + +p[1]; };
+function svgLine(pts, x, y, color) { return `<polyline fill="none" stroke="${color}" stroke-width="1.5" points="${pts.map(p => x(p[0]).toFixed(1) + "," + y(p[1]).toFixed(1)).join(" ")}"/>`; }
+function chartView(c) {
+  const wrap = h("div", {});
+  if (!c.trades.length && !c.index.length) { wrap.append(h("div", { class: "mute small" }, "No chart data.")); return wrap; }
+  const W = 760, M = { l: 48, r: 10, t: 10, b: 22 };
+  const frame = (H, x0, x1, lo, hi, ticks) => {
+    const x = (m) => M.l + (m - x0) / (x1 - x0) * (W - M.l - M.r), y = (v) => H - M.b - (v - lo) / ((hi - lo) || 1) * (H - M.t - M.b);
+    let g = "";
+    for (let i = 0; i <= 4; i++) { const v = lo + (hi - lo) * i / 4; g += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="currentColor" opacity=".12"/><text x="${M.l - 4}" y="${(y(v) + 3).toFixed(1)}" font-size="10" text-anchor="end" fill="currentColor" opacity=".7">${v.toFixed(0)}</text>`; }
+    for (let m = Math.ceil(x0 / ticks) * ticks; m <= x1; m += ticks) g += `<text x="${x(m).toFixed(1)}" y="${H - 6}" font-size="10" text-anchor="middle" fill="currentColor" opacity=".7">${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}</text>`;
+    return { x, y, g };
+  };
+  const GREEN = "#0b7a46", RED = "#c0262d";
+  if (c.index.length) {                                   // the whole day, trades shaded
+    const pts = c.index.map(b => [tmin(b[0]), b[4]]), H = 170;
+    const lo = Math.min(...c.index.map(b => b[3])), hi = Math.max(...c.index.map(b => b[2]));
+    const f = frame(H, 555, 930, lo, hi, 60);
+    let body = c.trades.map(t => `<rect x="${f.x(tmin(t.entry_time)).toFixed(1)}" y="${M.t}" width="${(f.x(tmin(t.exit_time)) - f.x(tmin(t.entry_time))).toFixed(1)}" height="${H - M.t - M.b}" fill="${t.pnl >= 0 ? GREEN : RED}" opacity=".15"/>`).join("");
+    wrap.append(h("div", { class: "small mute" }, `${c.instrument} index, 1-minute closes. Shaded = time in a trade (green win, red loss).`));
+    const d1 = h("div", {}); d1.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="color:var(--ink)">${f.g}${body}${svgLine(pts, f.x, f.y, "#2457d6")}</svg>`; wrap.append(d1);
+  }
+  if (!c.trades.length) return wrap;
+  let sel = 0;
+  const tabs = h("div", { class: "row", style: "margin:8px 0" }), det = h("div", {});
+  const draw = () => {
+    tabs.replaceChildren(...c.trades.map((t, i) => h("button", { class: i === sel ? "on primary" : "", onclick: () => { sel = i; draw(); } }, `#${i + 1} ${t.entry_time.slice(0, 5)} ${t.pnl >= 0 ? "+" : ""}${Math.round(t.pnl)}`)));
+    const t = c.trades[sel], H = 260, x0 = tmin(t.bars[0][0]), x1 = tmin(t.bars[t.bars.length - 1][0]) + 1;
+    const stopLv = t.stops.filter(s => s.pct === 5 || s.pct === 8);
+    const lo = Math.min(...t.bars.map(b => b[3]), ...stopLv.map(s => s.level)), hi = Math.max(...t.bars.map(b => b[2]));
+    const f = frame(H, x0, x1, lo * 0.995, hi * 1.005, 5), bw = Math.max(2, (W - M.l - M.r) / (x1 - x0) * 0.6);
+    let body = `<rect x="${f.x(tmin(t.entry_time)).toFixed(1)}" y="${M.t}" width="${(f.x(tmin(t.exit_time)) - f.x(tmin(t.entry_time))).toFixed(1)}" height="${H - M.t - M.b}" fill="${t.pnl >= 0 ? GREEN : RED}" opacity=".08"/>`;
+    for (const b of t.bars) { const cx = f.x(tmin(b[0])), up = b[4] >= b[1], col = up ? GREEN : RED;
+      body += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${f.y(b[2]).toFixed(1)}" y2="${f.y(b[3]).toFixed(1)}" stroke="${col}"/><rect x="${(cx - bw / 2).toFixed(1)}" y="${f.y(Math.max(b[1], b[4])).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, Math.abs(f.y(b[1]) - f.y(b[4]))).toFixed(1)}" fill="${col}"/>`; }
+    const hl = (v, col, label) => `<line x1="${M.l}" x2="${W - M.r}" y1="${f.y(v).toFixed(1)}" y2="${f.y(v).toFixed(1)}" stroke="${col}" stroke-dasharray="4 3" opacity=".8"/><text x="${W - M.r - 2}" y="${(f.y(v) - 3).toFixed(1)}" font-size="10" text-anchor="end" fill="${col}">${label}</text>`;
+    body += hl(t.entry, "#2457d6", "entry " + t.entry);
+    stopLv.forEach(s => body += hl(s.level, "#b8860b", `−${s.pct}% stop ${s.level}`));
+    const mk = (time, price, col, label, dy) => `<circle cx="${f.x(tmin(time)).toFixed(1)}" cy="${f.y(price).toFixed(1)}" r="5" fill="${col}" stroke="#fff"/><text x="${f.x(tmin(time)).toFixed(1)}" y="${(f.y(price) + dy).toFixed(1)}" font-size="11" font-weight="600" text-anchor="middle" fill="${col}">${label}</text>`;
+    body += mk(t.entry_time, t.entry, "#2457d6", "IN", 16) + mk(t.exit_time, t.exit, t.pnl >= 0 ? GREEN : RED, "OUT", -9);
+    const d2 = h("div", {}); d2.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="color:var(--ink)">${f.g}${body}</svg>`;
+    const pnlOf = (v) => money(v);
+    const rows = [
+      h("tr", {}, h("td", {}, "Actual"), h("td", {}, `${t.entry_time} @ ${t.entry} → ${t.exit_time} @ ${t.exit}`), h("td", {}, pnlOf(t.pnl))),
+      h("tr", {}, h("td", {}, "Best point while held"), h("td", {}, `at ${t.mfe_t}`), h("td", {}, pnlOf(t.mfe))),
+      h("tr", {}, h("td", {}, "Worst point while held"), h("td", {}, `at ${t.mae_t}`), h("td", {}, pnlOf(t.mae))),
+      h("tr", {}, h("td", {}, "Given back from the best point"), h("td", {}, t.gave_back > 0 ? "the exit came after the best price" : ""), h("td", {}, pnlOf(-t.gave_back))),
+      ...t.stops.map(s => h("tr", {}, h("td", {}, `If stopped at −${s.pct}% of premium`), h("td", {}, s.hit_time ? `hit at ${s.hit_time}` : "never hit"), h("td", {}, pnlOf(s.pnl)))),
+      ...t.delays.map(s => h("tr", {}, h("td", {}, `If entered ${s.min} min later`), h("td", {}, `@ ${s.price}, same exit`), h("td", {}, pnlOf(s.pnl)))),
+    ];
+    det.replaceChildren(h("div", { class: "small mute" }, `${t.symbol} · qty ${t.qty} · 1-minute candles of the option premium, 15 min of context each side.`), d2,
+      h("table", {}, h("thead", {}, h("tr", {}, ["What-if", "Detail", "P&L"].map(x => h("th", {}, x)))), h("tbody", {}, rows)),
+      h("div", { class: "mute small", style: "margin-top:4px" }, "What-ifs use 1-minute bars: a stop is filled at its level (or the bar open if it gapped), a later entry at the close of that minute, and the exit stays the same. Order inside a minute is unknown, and the entry minute is skipped for stops. Gross P&L, no slippage or charges. One day is not evidence on its own."));
+  };
+  draw(); wrap.append(tabs, det);
+  return wrap;
 }
 function showModal(node) { $("#modalbody").replaceChildren(node); $("#modal").hidden = false; }
 function closeModal() { $("#modal").hidden = true; }
