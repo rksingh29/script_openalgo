@@ -379,7 +379,7 @@ def signals_sessions():
     con.close()
     for r in rows:
         m = json.loads(r.pop("meta") or "{}")
-        r.update({k: m.get(k) for k in ("mode", "instrument", "date", "start", "speed", "slug")})
+        r.update({k: m.get(k) for k in ("mode", "instrument", "date", "start", "speed", "slug", "params")})
         r["acted"] = len(m.get("acted", {}))
     return jsonify({"items": rows})
 
@@ -405,9 +405,20 @@ def signals_start():
         return err("strategy not found or its code file is missing")
     if n_run >= MAX_SIGNAL_SESSIONS:
         return err(f"{n_run} signal sessions are running; stop one first", 409)
+    from script_openalgo.signals import parse_params
+    try:
+        params = parse_params(b.get("params") or "")
+    except ValueError as e:
+        return err(f"parameters: {e}")
+    code = open(os.path.join(db.STRATEGIES_DIR, s["slug"] + ".py"), encoding="utf-8").read()
+    unknown = [k for k in params if not re.search(rf"^{k}\s*=", code, re.M)]
+    if unknown:
+        return err(f"{', '.join(unknown)}: not a parameter of {s['slug']} (module-level UPPER_CASE constants only)")
     events = os.path.join(jobs.LOG_DIR, ws(), "signals_{JOB_ID}.jsonl")
     cmd = [sys.executable, "-u", "-m", "script_openalgo.signals", "--strategy", s["slug"], "--instrument", inst, "--events", events]
-    meta = {"mode": mode, "instrument": inst, "slug": s["slug"]}
+    if params:
+        cmd += ["--set", ", ".join(f"{k}={v}" for k, v in params.items())]
+    meta = {"mode": mode, "instrument": inst, "slug": s["slug"], "params": params}
     if mode == "replay":
         day, start = (b.get("date") or "").strip(), (b.get("time") or "").strip()
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
@@ -426,7 +437,7 @@ def signals_start():
     elif not jobs.key_present():
         return err("OPENALGO_API_KEY not found (environment or .env)")
     label = f"signals {s['slug']} {inst} " + (f"replay {meta['date']} from {meta['start'] or 'open'} x{meta['speed']:g}"
-                                              if mode == "replay" else "LIVE")
+                                              if mode == "replay" else "LIVE") + (f" [{', '.join(f'{k}={v}' for k, v in params.items())}]" if params else "")
     jid = jobs._launch(ws(), "signal", sid, label, cmd, meta=meta)
     con = conn()                                                # store the real events path now that the job id is known
     con.execute("UPDATE jobs SET meta=? WHERE id=?", (json.dumps(dict(meta, events=events.replace("{JOB_ID}", str(jid)))), jid))

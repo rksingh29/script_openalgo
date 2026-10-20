@@ -2,6 +2,7 @@
 
     python -m script_openalgo.signals --strategy <slug> --instrument NIFTY --events <file.jsonl>                 # live
     python -m script_openalgo.signals --strategy <slug> --instrument NIFTY --events <f> --date 2026-10-16 --from 10:30 --speed 30
+    ... --set "CONFIRM_BARS=2, USE_REGIME_FILTER=true"      # strategy constants for this session only
 
 Live:   prices and candles come from OpenAlgo (real time). placeorder() is NOT sent: it becomes a signal, filled on paper at
         the current LTP so the strategy keeps managing its position. The web app's "Act" button sends a signal for real.
@@ -112,11 +113,43 @@ def snapshot(s):
     return out
 
 
+PARAMS = {}          # --set KEY=VALUE overrides for this session only (module constants of the strategy)
+
+
+def parse_params(text):
+    """'CONFIRM_BARS=2, USE_REGIME_FILTER=true' -> {"CONFIRM_BARS": 2, "USE_REGIME_FILTER": True}."""
+    out = {}
+    for part in (text or "").replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" not in part:
+            raise ValueError(f"'{part}': use NAME=value")
+        k, v = (x.strip() for x in part.split("=", 1))
+        if not k.isidentifier() or not k.isupper():
+            raise ValueError(f"'{k}': parameter names are UPPER_CASE constants of the strategy")
+        low = v.lower()
+        if low in ("true", "false"):
+            out[k] = low == "true"
+        else:
+            try:
+                out[k] = int(v)
+            except ValueError:
+                try:
+                    out[k] = float(v)
+                except ValueError:
+                    out[k] = v.strip("'\"")
+    return out
+
+
 def _load_strategy(slug, instrument):
     sys.path.insert(0, config.strategies_dir())
     strat = importlib.import_module(slug)
+    unknown = [k for k in PARAMS if not hasattr(strat, k)]
+    if unknown:
+        raise SystemExit(f"unknown strategy parameter(s) {unknown} for {slug}")
     from script_openalgo.backtest_core import instruments
-    instruments.apply_strategy_overrides(strat, instrument, {})
+    instruments.apply_strategy_overrides(strat, instrument, PARAMS)
     return strat
 
 
@@ -164,7 +197,7 @@ def run_replay(slug, instrument, day, start, speed, ev):
     holder["s"] = s
     fake.strategy = s
     ev.emit("start", mode="replay", strategy=slug, instrument=instrument, date=day.isoformat(), start=start, speed=speed,
-            underlying=cfg["index_symbol"], lot=fake.lot, expiry=fake.expiry_date.isoformat())
+            underlying=cfg["index_symbol"], lot=fake.lot, expiry=fake.expiry_date.isoformat(), params=PARAMS)
     s.run()
 
 
@@ -225,7 +258,7 @@ def run_live(slug, instrument, ev):
     s = strat.Strategy(client, clock=datetime.now, sleeper=sleeper)
     holder["s"] = s
     ev.emit("start", mode="live", strategy=slug, instrument=instrument, date=date.today().isoformat(),
-            underlying=under[0], host=config.host())
+            underlying=under[0], host=config.host(), params=PARAMS)
     emit_bars(force=True)
     s.run()
 
@@ -238,9 +271,11 @@ def main():
     ap.add_argument("--date", help="replay this cached day (default: live)")
     ap.add_argument("--from", dest="start", help="HH:MM: replay at full speed until this time, then paced")
     ap.add_argument("--speed", type=float, default=30.0, help="replay speed (simulated seconds per real second; 0 = no pause)")
+    ap.add_argument("--set", dest="params", default="", help="strategy constants for this session, e.g. 'CONFIRM_BARS=2, LOTS=1'")
     a = ap.parse_args()
     ev = Events(a.events)
     try:
+        PARAMS.update(parse_params(a.params))
         if a.date:
             run_replay(a.strategy, a.instrument.upper(), date.fromisoformat(a.date), a.start, a.speed, ev)
         else:

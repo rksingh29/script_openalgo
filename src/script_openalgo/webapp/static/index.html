@@ -297,7 +297,7 @@ function resultsView() {
 
 // ---------- signals: run a strategy live or replay a cached day; its orders appear as signals you can act on ----------
 function sigState() {
-  return st.sig = st.sig || { form: { strategy_id: "", instrument: "NIFTY", mode: "live", date: "", time: "09:15", speed: "30" }, sel: null, view: null, sessions: null, mode: null, modeAt: 0, hide: {} };
+  return st.sig = st.sig || { form: { strategy_id: "", instrument: "NIFTY", mode: "live", date: "", time: "09:15", speed: "30", params: "" }, sel: null, view: null, sessions: null, mode: null, modeAt: 0, hide: {} };
 }
 async function loadSignals() {
   const S = sigState();
@@ -410,11 +410,14 @@ function signalsView() {
         h("input", { type: "date", value: F.date, onchange: set("date"), title: "a day with complete cached data (Data tab)" }),
         h("label", {}, "from ", h("input", { type: "time", value: F.time, min: "09:15", max: "15:30", onchange: set("time"), title: "runs at full speed until this time, then the chart builds up" })),
         h("select", { onchange: set("speed"), title: "simulated seconds per real second" }, [["1", "1x (real time)"], ["10", "10x"], ["30", "30x"], ["60", "60x"], ["300", "300x"], ["0", "no pause"]].map(([v, t]) => h("option", { value: v, selected: F.speed === v }, t)))] : null,
+      h("input", { placeholder: "parameters, e.g. CONFIRM_BARS=2", value: F.params, style: "min-width:230px", onchange: set("params"),
+        title: "Optional: strategy constants for this session only (NAME=value, comma-separated). The strategy file is not changed." }),
       h("button", { class: "primary", onclick: start }, "Start")),
     h("div", { class: "mute small", style: "margin-top:6px" }, "The strategy's own code runs; its orders are NOT sent: they appear below as signals (filled on paper at the current price so the strategy keeps managing its position). Live: candles and prices from OpenAlgo. Replay: the cached candles of that day, no lookahead."));
   const ses = S.sessions || [];
   const list = h("div", { class: "card" }, h("b", {}, "Sessions"), ses.length ? h("table", {}, h("tbody", {}, ses.map(s => h("tr", { class: "click" + (s.id === S.sel ? " on" : ""), onclick: () => { S.sel = s.id; refresh(); } },
-      h("td", {}, "#" + s.id), h("td", {}, s.name || s.slug), h("td", {}, s.instrument), h("td", { class: "small" }, s.mode === "replay" ? `replay ${s.date} from ${s.start || "open"} ×${s.speed}` : "LIVE"),
+      h("td", {}, "#" + s.id), h("td", {}, s.name || s.slug), h("td", {}, s.instrument), h("td", { class: "small" }, (s.mode === "replay" ? `replay ${s.date} from ${s.start || "open"} ×${s.speed}` : "LIVE"),
+        s.params && Object.keys(s.params).length ? h("div", { class: "mute" }, Object.entries(s.params).map(([k, x]) => `${k}=${x}`).join(", ")) : null),
       h("td", {}, badge(s.status, s.status === "running")), h("td", { class: "small mute" }, dt(s.started)),
       h("td", {}, s.status === "running" ? h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); act(() => api(`/api/signals/${s.id}/stop`, {})); } }, "Stop") : null))))) : h("div", { class: "mute small" }, "No sessions yet."));
   const v = S.view;
@@ -429,7 +432,9 @@ function signalsView() {
             onclick: () => confirm(`Send ${s.action} ${s.qty} ${s.symbol} as a MARKET order to OpenAlgo${S.mode && S.mode.analyze_mode ? " (Analyzer: paper)" : " (LIVE: real money)"}?`) && act(() => api(`/api/signals/${v.id}/act`, { signal_id: s.id })) }, "Act")
         : h("span", { class: "mute small" }, "replay"))));
     detail = h("div", { class: "card" },
-      h("div", { class: "row" }, h("b", {}, `#${v.id} ${v.meta.slug} · ${v.meta.instrument} · ${live ? "LIVE" : "replay " + v.meta.date}`), badge(v.status, v.status === "running"),
+      h("div", { class: "row" }, h("b", {}, `#${v.id} ${v.meta.slug} · ${v.meta.instrument} · ${live ? "LIVE" : "replay " + v.meta.date}`),
+        v.meta.params && Object.keys(v.meta.params).length ? h("span", { class: "chip" }, Object.entries(v.meta.params).map(([k, x]) => `${k}=${x}`).join(", ")) : null,
+        badge(v.status, v.status === "running"),
         h("span", { class: "mute small" }, v.clock ? ` clock ${v.clock}` : ""), h("span", { style: "flex:1" }),
         h("span", { class: "small" }, "paper P&L of closed signals "), money(p.pnl),
         p.openQty.length ? h("span", { class: "small warn" }, " · open: " + p.openQty.map(([k, n]) => `${k} ${n}`).join(", ")) : null),
