@@ -363,3 +363,22 @@ Added stocks are saved in `strategy_db/instruments.json` of the workspace.
 
 - **Results tab**: each run has a × button, each date/strategy group has "Delete N run(s)", and the run window has "Delete run". You are asked whether to delete the result folder on disk as well. If you keep the files, the run is remembered as deleted and does not come back when the app syncs the results folder.
 - **Jobs tab**: "Delete" on a finished job removes the job and its log file. "Clear finished jobs and logs" removes every finished job (ok, failed, cancelled, interrupted). Running jobs, jobs waiting for your answer and jobs held by the Claude limit are kept.
+
+## 17. Signals: run a strategy and act on its signals
+
+The **Signals** tab runs a strategy's real code and shows its orders as **signals** instead of sending them.
+
+1. Choose the **strategy** and the **instrument**.
+2. Choose the mode:
+   - **live (today, real time)**: candles and prices come from OpenAlgo while the market is open. Use it during market hours.
+   - **replay a day**: pick a date that has complete cached data (Data tab), a **from** time and a **speed**. The strategy runs at full speed up to the from time (so its indicators and opening range are correct), then the chart builds up from that moment at the chosen speed (1x is real time, 60x turns an hour into a minute, "no pause" is instant).
+3. Click **Start**. The session appears in the list; click it to see it. **Stop** ends it.
+
+What you see: the underlying's 1-minute candles, markers for every signal (▲ CE buy, ▼ PE buy, ✕ exit, at the underlying's price when it fired), the signal table, the strategy's own log, and the paper P&L of closed signals.
+
+**Act** (live sessions only) sends that signal to OpenAlgo as a MARKET order, once. Safety:
+- With OpenAlgo's **Analyzer (paper) mode** on, the order is a paper order. The banner at the top shows the mode.
+- With Analyzer off (live trading), Act is refused unless you tick **allow live orders** and type LIVE. Untick it to switch the guard back on.
+- The strategy itself never sends orders from this page; it is filled on paper at the current price so it keeps managing its position. If you act on an entry, act on its exit too: the page does not follow your real position.
+
+Up to 3 sessions can run at once. Sessions are jobs: they also appear in the Jobs tab, keep running if the web app restarts, and "Delete" there removes the session and its files.

@@ -173,8 +173,13 @@ def runs_delete_many():
 def _delete_job(con, j):
     """Remove a finished job row and its log files (only files inside the workspace's log folder)."""
     lp = j["log_path"]
+    try:
+        events = json.loads(j["meta"] or "{}").get("events")        # signal sessions keep their events next to the log
+    except (ValueError, TypeError):
+        events = None
     if lp and os.path.commonpath([os.path.abspath(lp), os.path.abspath(jobs.LOG_DIR)]) == os.path.abspath(jobs.LOG_DIR):
-        for p in (lp, lp[:-4] + ".exit" if lp.endswith(".log") else None):
+        ev_ok = events and os.path.commonpath([os.path.abspath(events), os.path.abspath(jobs.LOG_DIR)]) == os.path.abspath(jobs.LOG_DIR)
+        for p in (lp, lp[:-4] + ".exit" if lp.endswith(".log") else None, events if ev_ok else None):
             if p and os.path.exists(p):
                 try:
                     os.remove(p)
@@ -308,6 +313,196 @@ def instruments_delete(name):
         return err("built-in instruments cannot be removed", 409)
     instruments.remove_user(name)
     return jsonify({"removed": name, "builtin_restored": name in instruments.INSTRUMENTS})
+
+
+# ---------------- signals: run a strategy live or as a replay; its orders become signals; "act" sends one ----------------
+MAX_SIGNAL_SESSIONS = 3
+
+
+def _signal_job(jid):
+    con = conn()
+    j = con.execute("SELECT * FROM jobs WHERE id=? AND kind='signal'", (jid,)).fetchone()
+    con.close()
+    return dict(j) if j else None
+
+
+def _signal_events(j):
+    p = json.loads(j["meta"] or "{}").get("events")
+    if not p or not os.path.exists(p):
+        return []
+    out = []
+    with open(p, encoding="utf-8") as f:
+        for line in f:
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                pass                                            # a line still being written
+    return out
+
+
+def _openalgo_mode():
+    from script_openalgo.backtest_core import data_loader as dl
+    try:
+        code, b = dl._post("/api/v1/analyzer")
+        if code == 200 and b.get("status") == "success":
+            return {"ok": True, "analyze_mode": bool(b["data"].get("analyze_mode")), "mode": b["data"].get("mode")}
+        return {"ok": False, "message": b.get("message") or f"HTTP {code}"}
+    except BaseException as e:                                  # server down, key missing (SystemExit)
+        return {"ok": False, "message": str(e)[:200]}
+
+
+@app.get("/api/signals/mode")
+def signals_mode():
+    con = conn()
+    allow = db.get_setting(con, "allow_live_orders", "0") == "1"
+    con.close()
+    return jsonify({**_openalgo_mode(), "allow_live_orders": allow})
+
+
+@app.post("/api/signals/live-orders")
+def signals_live_orders():
+    b = request.json or {}
+    on = bool(b.get("on"))
+    if on and b.get("confirm") != "LIVE":
+        return err("type LIVE to allow real orders")
+    con = conn()
+    db.set_setting(con, "allow_live_orders", "1" if on else "0")
+    con.close()
+    return jsonify({"allow_live_orders": on})
+
+
+@app.get("/api/signals/sessions")
+def signals_sessions():
+    con = conn()
+    rows = db.rows(con, "SELECT j.id, j.status, j.label, j.started, j.ended, j.meta, s.name FROM jobs j "
+                        "LEFT JOIN strategies s ON s.id=j.strategy_id WHERE j.kind='signal' ORDER BY j.id DESC LIMIT 20")
+    con.close()
+    for r in rows:
+        m = json.loads(r.pop("meta") or "{}")
+        r.update({k: m.get(k) for k in ("mode", "instrument", "date", "start", "speed", "slug")})
+        r["acted"] = len(m.get("acted", {}))
+    return jsonify({"items": rows})
+
+
+@app.post("/api/signals/start")
+def signals_start():
+    from datetime import date as _date
+    from script_openalgo.backtest_core import data_loader as dl
+    b = request.json or {}
+    try:
+        sid = int(b.get("strategy_id"))
+    except (TypeError, ValueError):
+        return err("choose a strategy")
+    inst = (b.get("instrument") or "NIFTY").upper()
+    if inst not in instruments.INSTRUMENTS:
+        return err("unknown instrument")
+    mode = "replay" if b.get("mode") == "replay" else "live"
+    con = conn()
+    s = con.execute("SELECT id, slug, name FROM strategies WHERE id=?", (sid,)).fetchone()
+    n_run = con.execute("SELECT COUNT(*) FROM jobs WHERE kind='signal' AND status='running'").fetchone()[0]
+    con.close()
+    if not s or not os.path.exists(os.path.join(db.STRATEGIES_DIR, s["slug"] + ".py")):
+        return err("strategy not found or its code file is missing")
+    if n_run >= MAX_SIGNAL_SESSIONS:
+        return err(f"{n_run} signal sessions are running; stop one first", 409)
+    events = os.path.join(jobs.LOG_DIR, ws(), "signals_{JOB_ID}.jsonl")
+    cmd = [sys.executable, "-u", "-m", "script_openalgo.signals", "--strategy", s["slug"], "--instrument", inst, "--events", events]
+    meta = {"mode": mode, "instrument": inst, "slug": s["slug"]}
+    if mode == "replay":
+        day, start = (b.get("date") or "").strip(), (b.get("time") or "").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            return err("choose the replay date")
+        if start and not re.fullmatch(r"\d{2}:\d{2}", start):
+            return err("time must be HH:MM")
+        try:
+            speed = float(b.get("speed") or 30)
+        except ValueError:
+            return err("bad speed")
+        mf = dl.load_manifest(_date.fromisoformat(day), inst)
+        if not (mf and mf.get("complete")):
+            return err(f"no complete cached data for {inst} on {day}: fetch or backfill it in the Data tab first")
+        cmd += ["--date", day, "--speed", str(speed)] + (["--from", start] if start else [])
+        meta.update({"date": day, "start": start, "speed": speed})
+    elif not jobs.key_present():
+        return err("OPENALGO_API_KEY not found (environment or .env)")
+    label = f"signals {s['slug']} {inst} " + (f"replay {meta['date']} from {meta['start'] or 'open'} x{meta['speed']:g}"
+                                              if mode == "replay" else "LIVE")
+    jid = jobs._launch(ws(), "signal", sid, label, cmd, meta=meta)
+    con = conn()                                                # store the real events path now that the job id is known
+    con.execute("UPDATE jobs SET meta=? WHERE id=?", (json.dumps(dict(meta, events=events.replace("{JOB_ID}", str(jid)))), jid))
+    con.commit()
+    con.close()
+    return jsonify({"job_id": jid})
+
+
+@app.get("/api/signals/<int:jid>")
+def signals_view(jid):
+    j = _signal_job(jid)
+    if not j:
+        return err("not found", 404)
+    ev = _signal_events(j)
+    meta = json.loads(j["meta"] or "{}")
+    acted = meta.get("acted", {})
+    end = next((e for e in reversed(ev) if e["type"] in ("end", "error")), None)
+    log_tail = ""
+    if j["status"] != "running" and not end and j.get("log_path") and os.path.exists(j["log_path"]):
+        log_tail = open(j["log_path"], encoding="utf-8", errors="replace").read()[-1500:]
+    return jsonify({"id": jid, "status": j["status"], "label": j["label"],
+                    "meta": {k: v for k, v in meta.items() if k not in ("acted", "events")},
+                    "start": next((e for e in ev if e["type"] == "start"), {}),
+                    "clock": next((e["t"] for e in reversed(ev) if e["type"] == "clock"), None),
+                    "bars": [e for e in ev if e["type"] == "bar"],
+                    "signals": [dict(e, acted=acted.get(str(e["id"]))) for e in ev if e["type"] == "signal"],
+                    "logs": [e for e in ev if e["type"] == "log"][-80:], "end": end, "log_tail": log_tail})
+
+
+@app.post("/api/signals/<int:jid>/stop")
+def signals_stop(jid):
+    if not _signal_job(jid):
+        return err("not found", 404)
+    return jsonify({"stopped": jobs.cancel(ws(), jid)})
+
+
+@app.post("/api/signals/<int:jid>/act")
+def signals_act(jid):
+    """Send one LIVE signal to OpenAlgo as a market order. Paper (Analyzer) mode only, unless live orders are allowed."""
+    from script_openalgo.backtest_core import data_loader as dl
+    j = _signal_job(jid)
+    if not j:
+        return err("not found", 404)
+    meta = json.loads(j["meta"] or "{}")
+    if meta.get("mode") != "live":
+        return err("replay signals are historical; only live signals can be acted on", 409)
+    try:
+        sig_id = int((request.json or {}).get("signal_id"))
+    except (TypeError, ValueError):
+        return err("signal_id required")
+    sig = next((e for e in _signal_events(j) if e["type"] == "signal" and e["id"] == sig_id), None)
+    if not sig:
+        return err("signal not found", 404)
+    if str(sig_id) in meta.get("acted", {}):
+        return err("this signal was already sent", 409)
+    mode = _openalgo_mode()
+    if not mode.get("ok"):
+        return err(f"cannot read OpenAlgo's mode: {mode.get('message')}", 502)
+    con = conn()
+    allow = db.get_setting(con, "allow_live_orders", "0") == "1"
+    con.close()
+    if not mode["analyze_mode"] and not allow:
+        return err("OpenAlgo is in LIVE mode (Analyzer off). Switch Analyzer on in OpenAlgo, or allow live orders on this page first.", 409)
+    code, b = dl._post("/api/v1/placeorder", strategy=f"StrategyLab-{meta.get('slug', '')}"[:40], symbol=sig["symbol"],
+                       action=sig["action"], exchange=sig.get("exchange") or "NFO", pricetype="MARKET",
+                       product=sig.get("product") or "MIS", quantity=sig["qty"])
+    if not (code == 200 and b.get("status") == "success"):
+        return err(f"order rejected by OpenAlgo: {b.get('message') or code}", 502)
+    rec = {"at": db.now(), "orderid": b.get("orderid"), "paper": mode["analyze_mode"]}
+    con = conn()
+    m = json.loads(con.execute("SELECT meta FROM jobs WHERE id=?", (jid,)).fetchone()["meta"] or "{}")
+    m.setdefault("acted", {})[str(sig_id)] = rec
+    con.execute("UPDATE jobs SET meta=? WHERE id=?", (json.dumps(m), jid))
+    con.commit()
+    con.close()
+    return jsonify(rec)
 
 
 # ---------------- actions ----------------

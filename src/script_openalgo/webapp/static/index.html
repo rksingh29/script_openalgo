@@ -22,7 +22,7 @@
   nav button { border-radius:6px; } nav button.on { background:var(--acc); color:#fff; border-color:var(--acc); }
   .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; margin-bottom:12px; overflow-x:auto; }
   table { border-collapse:collapse; width:100%; } th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
-  th { font-weight:600; color:var(--mute); font-size:12px; white-space:nowrap; } tr.click:hover { background:var(--chip); cursor:pointer; }
+  th { font-weight:600; color:var(--mute); font-size:12px; white-space:nowrap; } tr.click:hover { background:var(--chip); cursor:pointer; } tr.click.on { background:var(--chip); }
   .num { text-align:right; font-variant-numeric:tabular-nums; } .pos { color:var(--pos); } .neg { color:var(--neg); } .mute { color:var(--mute); }
   .badge { display:inline-block; padding:1px 8px; border-radius:10px; background:var(--chip); font-size:12px; white-space:nowrap; }
   .badge.in_progress, .badge.running { background:#2457d622; color:var(--acc); }
@@ -122,7 +122,7 @@ $("#seed").onclick = () => confirm("Research 10 unique strategies (one-time seed
 $("#daily").onclick = () => act(() => api("/api/research", { mode: "daily" }));
 $("#auto").onchange = (e) => act(() => api("/api/auto", { on: e.target.checked }));
 
-const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["instruments", "Instruments"], ["jobs", "Jobs"], ["backup", "Backup"]];
+const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["signals", "Signals"], ["instruments", "Instruments"], ["jobs", "Jobs"], ["backup", "Backup"]];
 function renderTabs() {
   $("#tabs").replaceChildren(...TABS.map(([k, l]) => h("button", { class: st.tab === k ? "on" : "", onclick: () => { st.tab = k; refresh(); } }, l)));
 }
@@ -293,6 +293,117 @@ function resultsView() {
           h("td", {}, h("button", { class: "danger small", title: "Delete this run", onclick: (e) => { e.stopPropagation(); act(() => deleteRuns([r.id])); } }, "×")))))));
   });
   return h("div", {}, mode, h("div", { class: "mute small", style: "margin-bottom:8px" }, "P&L is gross, without slippage or charges. Few days = low sample; do not read a ranking into it."), cards.length ? cards : h("div", { class: "card mute" }, "No results yet."));
+}
+
+// ---------- signals: run a strategy live or replay a cached day; its orders appear as signals you can act on ----------
+function sigState() {
+  return st.sig = st.sig || { form: { strategy_id: "", instrument: "NIFTY", mode: "live", date: "", time: "09:15", speed: "30" }, sel: null, view: null, sessions: null, mode: null, modeAt: 0 };
+}
+async function loadSignals() {
+  const S = sigState();
+  S.sessions = (await api("/api/signals/sessions")).items;
+  if (!S.mode || Date.now() - S.modeAt > 15000) { S.mode = await api("/api/signals/mode"); S.modeAt = Date.now(); }
+  if (!S.sel && S.sessions.length) S.sel = S.sessions[0].id;
+  S.view = S.sel ? await api("/api/signals/" + S.sel) : null;
+}
+function sigPnl(sigs) {          // FIFO pairing of paper fills per symbol: realised P&L of closed signals, open quantity
+  const open = {}; let pnl = 0;
+  sigs.forEach(s => {
+    if (s.price == null) return;
+    const q = open[s.symbol] = open[s.symbol] || [];
+    if (s.action === "BUY") q.push({ qty: s.qty, px: s.price });
+    else { let left = s.qty; while (left > 0 && q.length) { const l = q[0], t = Math.min(left, l.qty); pnl += (s.price - l.px) * t; l.qty -= t; left -= t; if (!l.qty) q.shift(); } }
+  });
+  const openQty = Object.entries(open).map(([k, q]) => [k, q.reduce((a, l) => a + l.qty, 0)]).filter(([, n]) => n > 0);
+  return { pnl, openQty };
+}
+function sigChart(v) {
+  const bars = v.bars, W = 760, H = 280, M = { l: 52, r: 10, t: 10, b: 22 };
+  if (!bars.length) return h("div", { class: "mute small", style: "padding:20px 0" }, v.status === "running" ? "Waiting for the first completed candle…" : "No candles.");
+  const tm = (t) => { const p = t.split(":"); return +p[0] * 60 + +p[1] + (p[2] ? +p[2] / 60 : 0); };
+  const sigs = v.signals.filter(s => s.underlying != null);
+  const x0 = Math.min(555, tm(bars[0].t)), x1 = Math.max(930, tm(bars[bars.length - 1].t) + 1);
+  const lo = Math.min(...bars.map(b => b.l), ...sigs.map(s => s.underlying)), hi = Math.max(...bars.map(b => b.h), ...sigs.map(s => s.underlying));
+  const x = (m) => M.l + (m - x0) / (x1 - x0) * (W - M.l - M.r), y = (v2) => H - M.b - (v2 - lo) / ((hi - lo) || 1) * (H - M.t - M.b);
+  let g = "";
+  for (let i = 0; i <= 4; i++) { const val = lo + (hi - lo) * i / 4; g += `<line x1="${M.l}" x2="${W - M.r}" y1="${y(val).toFixed(1)}" y2="${y(val).toFixed(1)}" stroke="currentColor" opacity=".12"/><text x="${M.l - 4}" y="${(y(val) + 3).toFixed(1)}" font-size="10" text-anchor="end" fill="currentColor" opacity=".7">${val.toFixed(val > 999 ? 0 : 1)}</text>`; }
+  for (let m = 560; m <= 930; m += 30) g += `<text x="${x(m).toFixed(1)}" y="${H - 6}" font-size="10" text-anchor="middle" fill="currentColor" opacity=".7">${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}</text>`;
+  const GREEN = "#0b7a46", RED = "#c0262d", bw = Math.max(1, (W - M.l - M.r) / (x1 - x0) * 0.7);
+  let body = "";
+  if (bars.length <= 200) for (const b of bars) { const cx = x(tm(b.t) + 0.5), col = b.c >= b.o ? GREEN : RED;
+    body += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${y(b.h).toFixed(1)}" y2="${y(b.l).toFixed(1)}" stroke="${col}"/><rect x="${(cx - bw / 2).toFixed(1)}" y="${y(Math.max(b.o, b.c)).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, Math.abs(y(b.o) - y(b.c))).toFixed(1)}" fill="${col}"/>`; }
+  else body += `<polyline fill="none" stroke="#2457d6" stroke-width="1.4" points="${bars.map(b => x(tm(b.t) + 0.5).toFixed(1) + "," + y(b.c).toFixed(1)).join(" ")}"/>`;
+  if (v.start && v.start.start && v.meta.mode === "replay") { const sx = x(tm(v.start.start)); body += `<line x1="${sx.toFixed(1)}" x2="${sx.toFixed(1)}" y1="${M.t}" y2="${H - M.b}" stroke="#b8860b" stroke-dasharray="4 3"/><text x="${(sx + 3).toFixed(1)}" y="${M.t + 10}" font-size="10" fill="#b8860b">replay from ${v.start.start}</text>`; }
+  for (const s of sigs) {
+    const cx = x(tm(s.t)), cy = y(s.underlying), ce = /CE$/.test(s.symbol), buy = s.action === "BUY";
+    const col = !buy ? "#667085" : ce ? GREEN : RED, label = !buy ? "exit" : ce ? "CE" : "PE";
+    const path = !buy ? `M${cx - 5},${cy - 5}L${cx + 5},${cy + 5}M${cx - 5},${cy + 5}L${cx + 5},${cy - 5}` : ce ? `M${cx},${cy - 7}L${cx - 6},${cy + 5}L${cx + 6},${cy + 5}Z` : `M${cx},${cy + 7}L${cx - 6},${cy - 5}L${cx + 6},${cy - 5}Z`;
+    body += `<path d="${path}" fill="${col}" stroke="${col}" stroke-width="2"/><text x="${cx.toFixed(1)}" y="${(buy && !ce ? cy - 9 : cy + 18).toFixed(1)}" font-size="10" font-weight="600" text-anchor="middle" fill="${col}">${label} #${s.id}</text>`;
+  }
+  const d = h("div", {}); d.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="color:var(--ink)">${g}${body}</svg>`;
+  return d;
+}
+function signalsView() {
+  const S = sigState(), F = S.form, d = st.data;
+  const strategies = d.strategies.filter(s => !s.archived_at && s.file);
+  const set = (k) => (e) => { F[k] = e.target.value; if (k === "mode") render(); };
+  const md = S.mode;
+  const modeBanner = !md ? null : !md.ok ? h("div", { class: "banner small" }, "OpenAlgo not reachable: " + md.message)
+    : h("div", { class: "row small", style: "margin-bottom:8px" }, h("b", {}, "OpenAlgo: "),
+      md.analyze_mode ? h("span", { class: "pos" }, "Analyzer (paper) mode: Act sends paper orders") : h("span", { class: "neg" }, "LIVE mode: Act would send REAL orders"),
+      h("span", { style: "flex:1" }),
+      h("label", { title: "Needed only when OpenAlgo is in live mode" }, h("input", { type: "checkbox", checked: md.allow_live_orders, onchange: (e) => {
+        const on = e.target.checked; const c = on ? prompt("Allow Act to send REAL orders when OpenAlgo's Analyzer is off? Type LIVE to confirm.") : "";
+        if (on && c !== "LIVE") { e.target.checked = false; return; }
+        act(async () => { await api("/api/signals/live-orders", { on, confirm: c }); S.modeAt = 0; });
+      } }), " allow live orders"));
+  const start = () => {
+    if (!F.strategy_id) { alert("Choose a strategy."); return; }
+    if (F.mode === "replay" && !F.date) { alert("Choose the replay date."); return; }
+    act(async () => { const r = await api("/api/signals/start", F); S.sel = r.job_id; });
+  };
+  const form = h("div", { class: "card" }, h("b", {}, "Generate signals"),
+    h("div", { class: "row small", style: "margin-top:8px;flex-wrap:wrap" },
+      h("select", { onchange: set("strategy_id") }, h("option", { value: "" }, "strategy…"), strategies.map(s => h("option", { value: s.id, selected: String(s.id) === String(F.strategy_id) }, s.name))),
+      h("select", { onchange: set("instrument") }, d.instruments.map(i => h("option", { value: i, selected: i === F.instrument }, i))),
+      h("label", {}, h("input", { type: "radio", name: "sigmode", checked: F.mode === "live", onchange: () => { F.mode = "live"; render(); } }), " live (today, real time)"),
+      h("label", {}, h("input", { type: "radio", name: "sigmode", checked: F.mode === "replay", onchange: () => { F.mode = "replay"; render(); } }), " replay a day"),
+      F.mode === "replay" ? [
+        h("input", { type: "date", value: F.date, onchange: set("date"), title: "a day with complete cached data (Data tab)" }),
+        h("label", {}, "from ", h("input", { type: "time", value: F.time, min: "09:15", max: "15:30", onchange: set("time"), title: "runs at full speed until this time, then the chart builds up" })),
+        h("select", { onchange: set("speed"), title: "simulated seconds per real second" }, [["1", "1x (real time)"], ["10", "10x"], ["30", "30x"], ["60", "60x"], ["300", "300x"], ["0", "no pause"]].map(([v, t]) => h("option", { value: v, selected: F.speed === v }, t)))] : null,
+      h("button", { class: "primary", onclick: start }, "Start")),
+    h("div", { class: "mute small", style: "margin-top:6px" }, "The strategy's own code runs; its orders are NOT sent: they appear below as signals (filled on paper at the current price so the strategy keeps managing its position). Live: candles and prices from OpenAlgo. Replay: the cached candles of that day, no lookahead."));
+  const ses = S.sessions || [];
+  const list = h("div", { class: "card" }, h("b", {}, "Sessions"), ses.length ? h("table", {}, h("tbody", {}, ses.map(s => h("tr", { class: "click" + (s.id === S.sel ? " on" : ""), onclick: () => { S.sel = s.id; refresh(); } },
+      h("td", {}, "#" + s.id), h("td", {}, s.name || s.slug), h("td", {}, s.instrument), h("td", { class: "small" }, s.mode === "replay" ? `replay ${s.date} from ${s.start || "open"} ×${s.speed}` : "LIVE"),
+      h("td", {}, badge(s.status, s.status === "running")), h("td", { class: "small mute" }, dt(s.started)),
+      h("td", {}, s.status === "running" ? h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); act(() => api(`/api/signals/${s.id}/stop`, {})); } }, "Stop") : null))))) : h("div", { class: "mute small" }, "No sessions yet."));
+  const v = S.view;
+  let detail = null;
+  if (v) {
+    const live = v.meta.mode === "live", p = sigPnl(v.signals);
+    const sendable = (s) => live && !s.acted && v.status === "running";
+    const rows = v.signals.slice().reverse().map(s => h("tr", {}, h("td", {}, "#" + s.id), h("td", {}, s.t), h("td", {}, h("b", { class: s.action === "BUY" ? (/CE$/.test(s.symbol) ? "pos" : "neg") : "" }, s.action)),
+      h("td", {}, s.symbol), h("td", {}, s.qty), h("td", {}, s.price ?? "–"), h("td", { class: "small mute" }, s.underlying ?? ""),
+      h("td", {}, s.acted ? h("span", { class: "small" }, `sent ${s.acted.paper ? "(paper)" : "(LIVE)"} #${s.acted.orderid || ""}`)
+        : live ? h("button", { class: "primary small", disabled: !sendable(s), title: v.status === "running" ? "Send this order to OpenAlgo now (market order)" : "session stopped",
+            onclick: () => confirm(`Send ${s.action} ${s.qty} ${s.symbol} as a MARKET order to OpenAlgo${S.mode && S.mode.analyze_mode ? " (Analyzer: paper)" : " (LIVE: real money)"}?`) && act(() => api(`/api/signals/${v.id}/act`, { signal_id: s.id })) }, "Act")
+        : h("span", { class: "mute small" }, "replay"))));
+    detail = h("div", { class: "card" },
+      h("div", { class: "row" }, h("b", {}, `#${v.id} ${v.meta.slug} · ${v.meta.instrument} · ${live ? "LIVE" : "replay " + v.meta.date}`), badge(v.status, v.status === "running"),
+        h("span", { class: "mute small" }, v.clock ? ` clock ${v.clock}` : ""), h("span", { style: "flex:1" }),
+        h("span", { class: "small" }, "paper P&L of closed signals "), money(p.pnl),
+        p.openQty.length ? h("span", { class: "small warn" }, " · open: " + p.openQty.map(([k, n]) => `${k} ${n}`).join(", ")) : null),
+      v.end && v.end.type === "error" ? h("div", { class: "banner small" }, "Stopped with an error: " + v.end.message) : null,
+      v.log_tail ? h("pre", { class: "small" }, v.log_tail) : null,
+      sigChart(v),
+      h("div", { class: "mute small" }, "▲ CE buy (bullish) · ▼ PE buy (bearish) · ✕ exit, drawn at the underlying's price when the signal fired."),
+      h("h4", {}, `Signals (${v.signals.length})`),
+      v.signals.length ? h("table", {}, h("thead", {}, h("tr", {}, ["#", "Time", "Action", "Symbol", "Qty", "Price", "Underlying", ""].map(t => h("th", {}, t)))), h("tbody", {}, rows)) : h("div", { class: "mute small" }, "No signal yet."),
+      h("h4", {}, "Strategy log"), h("pre", { class: "small", style: "max-height:260px;overflow:auto" }, v.logs.slice().reverse().map(l => `${l.t} | ${l.msg}`).join("\n") || "(empty)"));
+  }
+  return h("div", {}, modeBanner, form, list, detail);
 }
 
 // ---------- instruments: search OpenAlgo and add stocks / indices with options ----------
@@ -611,7 +722,7 @@ function render() {
     return;
   }
   renderHeader(); renderTabs();
-  const v = { strategies: strategiesView, results: resultsView, data: dataView, instruments: instrumentsView, jobs: jobsView, backup: backupView }[st.tab]();
+  const v = { strategies: strategiesView, results: resultsView, data: dataView, instruments: instrumentsView, signals: signalsView, jobs: jobsView, backup: backupView }[st.tab]();
   const focus = document.activeElement && document.activeElement.id === "q";
   $("#view").replaceChildren(v);
   if (focus) { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -623,6 +734,7 @@ async function refresh() {
     if (!st.page && st.tab === "results") st.results = await api("/api/results");
     if (!st.page && st.tab === "data") st.dataList = await api("/api/data");
     if (!st.page && st.tab === "instruments" && !st.instBusy) st.instList = await api("/api/instruments");
+    if (!st.page && st.tab === "signals") await loadSignals();
     if (!st.page && st.tab === "backup" && !st.backupBusy) st.backup = { preview: await api("/api/backup/preview"), list: await api("/api/backup/list") };
     render();
   } catch (e) { $("#banner").replaceChildren(h("div", { class: "banner" }, "Cannot reach the server: " + e.message)); }

@@ -14,12 +14,15 @@ Research, backtest and manage OpenAlgo option strategies against an OpenAlgo ser
 - **Git tracks code + the strategy DB only** (decided 2026-10-20): code, `strategies/`, docs, `.claude/agents` and skill knowledge, `strategy_db/default.db` and `strategy_db/specs/`. NOT tracked (see `.gitignore`): `.env` (secret), `data_cache/`, `results/`, `backups/`, `dist/`, `strategy_db/logs|inbox`, `.claude/state/`. Back the workspace data up with `script-openalgo export` (Backup tab): `data_cache/` is irreplaceable because expired option contracts cannot be fetched again.
 - **Deployment** (not the working copy): `G:\Claude\test_script\my_workspace` with venv `G:\Claude\test_script\venv` runs the web app from the installed wheel. Code changes reach it only after a rebuild + reinstall; strategy files must be copied into its `strategies/` (assets only seed an empty folder). Agents running in the deployed web app write new strategies and knowledge there: bring them back into the repo.
 
+## Signals tab
+`src/script_openalgo/signals.py` runs a strategy's real class as a job (kind `signal`): live (OpenAlgo SDK, real time) or replay (FakeClient on a cached day, full speed until `--from`, then `--speed`x). `SignalRecorder` turns every `placeorder()` into a signal event (paper fill at the current price) in `strategy_db/logs/<ws>/signals_<job>.jsonl`. Web app endpoints `/api/signals/*`; **Act** sends one live signal via `/api/v1/placeorder`, only in OpenAlgo Analyzer mode unless the setting `allow_live_orders` is on (typed LIVE confirmation).
+
 ## Rules that must not be broken
 - A backtest **imports and replays the real strategy class** (`Strategy(client, clock, sleeper)`); never re-implement a strategy for a backtest. All tunables are module-level constants.
 - No lookahead: FakeClient returns only completed bars; fills are the close of the last completed 1m bar. `verify.py` re-derives every fill from the candles.
 - Regression after any change to `backtest_core/`: `nifty_direction_ce_pe` on 2026-10-16 must give NIFTY **-692.25** and BANKNIFTY **-1330.50** gross.
 - Gross P&L has no slippage/charges. For stocks read `net_pnl` (estimated spread). Never rank strategies on a low sample (< 20 days).
-- Strategies run with OpenAlgo Analyzer (paper) ON until the user explicitly approves live trading.
+- Strategies run with OpenAlgo Analyzer (paper) ON until the user explicitly approves live trading. The Signals page's Act button refuses real orders unless the user has turned on `allow_live_orders`.
 - Knowledge files in the skill (`knowledge/*.md`) are append-only, dated.
 
 ## Instruments
