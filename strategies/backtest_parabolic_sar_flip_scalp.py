@@ -34,7 +34,10 @@ def run_day(day, quiet=False, instrument="NIFTY"):
             raise SystemExit(f"unknown strategy parameter {k}")
         setattr(strat, k, v)
 
-    strat.UNDERLYING = dl.instruments.get(instrument)["index_symbol"]   # strategy constant, per instrument
+    if hasattr(dl.instruments, "apply_strategy_overrides"):   # underlying, exchange, per-instrument sizing
+        dl.instruments.apply_strategy_overrides(strat, instrument, PARAM_OVERRIDES)
+    else:                                                     # older installed package
+        strat.UNDERLYING = dl.instruments.get(instrument)["index_symbol"]
     clock = SimClock(day)
     client = FakeClient(day, clock, SLIPPAGE_PTS, CHARGES_PER_ORDER, instrument)
     log_lines = []

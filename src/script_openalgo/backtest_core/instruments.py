@@ -42,6 +42,9 @@ BUILTIN = {
         "max_expiry_gap_days": 35,  # monthly expiries only (as listed on 2026-10-17)
         "min_underlying_bars": 370,
         "min_option_coverage": 0.90,
+        # parabolic_sar_flip_scalp: enter on the flip candle on BANKNIFTY (user decision 2026-10-21; 12-day test:
+        # +23054 with CONFIRM_BARS=0 vs -1538 with 2). Applies to any strategy that has a CONFIRM_BARS constant.
+        "strategy_overrides": {"CONFIRM_BARS": 0},
     },
     "RELIANCE": {                  # lot 500, strikes every 10 around 1200 (2026-10-20); liquid options
         "kind": "stock",

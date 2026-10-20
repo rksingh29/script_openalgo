@@ -239,3 +239,4 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [x] parabolic_sar_flip_scalp: VIX_NEAR_HIGH_PCT=10 is the default (user decision 2026-10-21); repo runs regenerated
 - [ ] VIX filter robustness: backfill 60+ days, sweep 5-30 %, choose on older days and check on newer ones; consider a range that ignores the opening minutes
 - [x] parabolic_sar_flip_scalp: CONFIRM_BARS=2 default as well (user decision 2026-10-21, against the 37-day comparison; revisit after more days)
+- [x] BANKNIFTY: CONFIRM_BARS=0 for parabolic_sar_flip_scalp via instruments.py strategy_overrides (user decision 2026-10-21); fixed backtest_parabolic_sar_flip_scalp.py (old template line ignored instrument overrides)
