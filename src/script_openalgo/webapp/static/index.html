@@ -354,7 +354,7 @@ function sigChart(v) {
   const sigs = v.signals.filter(s => s.underlying != null);
   const x0 = Math.min(555, tm(bars[0].t)), x1 = Math.max(930, tm(bars[bars.length - 1].t) + 1);
   const series = sigSeries(v);
-  const sv = Object.values(series).flatMap(s => s.pts.map(p => p[1]));
+  const sv = Object.values(series).flatMap(s => s.pts.map(p => p[1])).filter(x => x != null);   // null = line ended (Math.min would read it as 0)
   const lo = Math.min(...bars.map(b => b.l), ...sigs.map(s => s.underlying), ...sv), hi = Math.max(...bars.map(b => b.h), ...sigs.map(s => s.underlying), ...sv);
   const x = (m) => M.l + (m - x0) / (x1 - x0) * (W - M.l - M.r), y = (v2) => H - M.b - (v2 - lo) / ((hi - lo) || 1) * (H - M.t - M.b);
   let g = "";
