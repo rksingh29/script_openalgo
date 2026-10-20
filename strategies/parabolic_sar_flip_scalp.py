@@ -55,7 +55,9 @@ candle's close (+ CONFIRM_MIN_MOVE_PCT). Otherwise the signal is dropped. The
 stop is the SAR at the confirming candle. Added 2026-10-20 after a whipsaw on
 NIFTY 2026-10-19 (CE bought at the 09:35 flip, the market reversed at once).
 
-Optional entry filters (default OFF): USE_LATE_ENTRY_FILTER skips a flip when
+Entry filters: VIX_NEAR_HIGH_PCT (ON, 10) skips a buy when India VIX is in the
+top 10 % of its range so far today; if VIX data is missing the trade is taken.
+Optional, default OFF: USE_LATE_ENTRY_FILTER skips a flip when
 |price - SAR| > LATE_ENTRY_ATR_MULT x ATR(ATR_PERIOD) of the 5m candles (at a
 flip the SAR sits at the previous swing extreme, so this is both "the move has
 already run" and "the stop is far"); VIX_NEAR_HIGH_PCT skips when India VIX is in
@@ -129,13 +131,14 @@ MACD_SIGNAL = 9
 CONFIRM_BARS = 0              # 0 = off; N = after a flip, wait N more closed 5m candles before entering
 CONFIRM_MIN_MOVE_PCT = 0.0    # each confirming close must be beyond the flip candle's close by this % of price
 
-# ---- optional entry filters (all default OFF; compared on all cached days 2026-10-20) ----
+# ---- optional entry filters (compared on all cached days 2026-10-20; only the VIX near-high filter is ON) ----
 USE_LATE_ENTRY_FILTER = False # skip if |price - SAR| > LATE_ENTRY_ATR_MULT x ATR: the move already ran / the stop is far
 LATE_ENTRY_ATR_MULT = 4.0
 ATR_PERIOD = 14               # Wilder ATR on the 5m candles of the day (simple average until it warms up)
 VIX_SYMBOL = "INDIAVIX"       # India VIX (NSE_INDEX), 1m candles
 VIX_EXCHANGE = "NSE_INDEX"
-VIX_NEAR_HIGH_PCT = 0         # 0 = off; skip if VIX is in the top N % of its range so far today (a spike just happened)
+VIX_NEAR_HIGH_PCT = 10        # skip if India VIX is in the top N % of its range so far today (a spike just happened); 0 = off.
+                              # ON by default since 2026-10-21 (user decision; 37-day test: same gross, 26 fewer trades)
 VIX_MAX = 0                   # 0 = off; skip if India VIX is above this level
 
 USE_FIXED_TARGET = False
