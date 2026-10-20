@@ -9,8 +9,10 @@ Research, backtest and manage OpenAlgo option strategies against an OpenAlgo ser
   - `strategy_db/`: SQLite DB (strategies, runs, jobs, settings, tombstones, ignored_results, claude_calls), CLI, Claude usage gate.
   - `webapp/`: Flask app "Strategy Lab" (`app.py`, `jobs.py`, `chart.py`, `static/index.html`), port 5055, localhost only.
   - `assets/`: agents, the `strategy_builder` skill + knowledge, 12 example strategies (copied into a workspace by `init` only when its `strategies/` is empty).
-- `strategies/<slug>.py` and `strategies/backtest_<slug>.py`: strategy and its backtest (this repo's copy).
-- A user's **workspace** (e.g. `G:\Claude\test_script\my_workspace`, venv `G:\Claude\test_script\venv`) has its own `strategies/`, `data_cache/`, `results/`, `strategy_db/`. The installed package and the workspace files are separate: code changes need a rebuild + reinstall; strategy file changes must be copied to the workspace.
+- `strategies/<slug>.py` and `strategies/backtest_<slug>.py`: strategies (15) and their backtests.
+- **This repo is the working workspace**: run fetch, backfill, multiday and backtests with the repo as the working folder (`PYTHONPATH=src`).
+- **Git tracks code + the strategy DB only** (decided 2026-10-20): code, `strategies/`, docs, `.claude/agents` and skill knowledge, `strategy_db/default.db` and `strategy_db/specs/`. NOT tracked (see `.gitignore`): `.env` (secret), `data_cache/`, `results/`, `backups/`, `dist/`, `strategy_db/logs|inbox`, `.claude/state/`. Back the workspace data up with `script-openalgo export` (Backup tab): `data_cache/` is irreplaceable because expired option contracts cannot be fetched again.
+- **Deployment** (not the working copy): `G:\Claude\test_script\my_workspace` with venv `G:\Claude\test_script\venv` runs the web app from the installed wheel. Code changes reach it only after a rebuild + reinstall; strategy files must be copied into its `strategies/` (assets only seed an empty folder). Agents running in the deployed web app write new strategies and knowledge there: bring them back into the repo.
 
 ## Rules that must not be broken
 - A backtest **imports and replays the real strategy class** (`Strategy(client, clock, sleeper)`); never re-implement a strategy for a backtest. All tunables are module-level constants.

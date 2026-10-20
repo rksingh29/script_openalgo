@@ -1,9 +1,0 @@
-2026-10-14 09:00:00 | Strategy BollingerBandBounceScalp starting on NIFTY
-2026-10-14 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
-2026-10-14 13:00:00 | CE band-touch trigger at bar 44 (12:55); close 22668.75 RSI 16.9; waiting for reclaim confirmation
-2026-10-14 13:05:00 | Reclaim not confirmed for CE at bar 45; setup dropped
-2026-10-14 13:10:00 | CE trigger at bar 46 skipped: band-walk count 3 > 2 (trending)
-2026-10-14 13:15:00 | CE trigger at bar 47 skipped: band-walk count 4 > 2 (trending)
-2026-10-14 13:20:00 | CE trigger at bar 48 skipped: band-walk count 5 > 2 (trending)
-2026-10-14 15:15:00 | Square-off time reached; stopping for the day
-2026-10-14 15:15:00 | Done for the day. Trades 0 | day P&L +0

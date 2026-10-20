@@ -1,4 +1,0 @@
-2026-10-14 09:00:00 | Strategy VwapReclaimScalp starting on NIFTY
-2026-10-14 09:00:00 | Analyzer (paper) mode: {'analyze_mode': True, 'mode': 'backtest'}
-2026-10-14 15:15:00 | Square-off time reached; stopping for the day
-2026-10-14 15:15:00 | Done for the day. Trades 0 | day P&L +0

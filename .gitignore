@@ -2,3 +2,19 @@ __pycache__/
 *.py[cod]
 venv/
 .venv/
+
+# secrets: never commit (the key lives only in the local .env)
+.env
+
+# workspace data: back it up with `script-openalgo export` (Backup tab), not git
+data_cache/
+data_cache_trial/
+results/
+backups/
+dist/
+strategy_db/logs/
+strategy_db/inbox/
+strategy_db/*.db-journal
+strategy_db/*.db-wal
+strategy_db/*.db-shm
+.claude/state/
