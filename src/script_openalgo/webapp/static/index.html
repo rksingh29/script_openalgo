@@ -122,7 +122,7 @@ $("#seed").onclick = () => confirm("Research 10 unique strategies (one-time seed
 $("#daily").onclick = () => act(() => api("/api/research", { mode: "daily" }));
 $("#auto").onchange = (e) => act(() => api("/api/auto", { on: e.target.checked }));
 
-const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["jobs", "Jobs"], ["backup", "Backup"]];
+const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["instruments", "Instruments"], ["jobs", "Jobs"], ["backup", "Backup"]];
 function renderTabs() {
   $("#tabs").replaceChildren(...TABS.map(([k, l]) => h("button", { class: st.tab === k ? "on" : "", onclick: () => { st.tab = k; refresh(); } }, l)));
 }
@@ -293,6 +293,52 @@ function resultsView() {
           h("td", {}, h("button", { class: "danger small", title: "Delete this run", onclick: (e) => { e.stopPropagation(); act(() => deleteRuns([r.id])); } }, "×")))))));
   });
   return h("div", {}, mode, h("div", { class: "mute small", style: "margin-bottom:8px" }, "P&L is gross, without slippage or charges. Few days = low sample; do not read a ranking into it."), cards.length ? cards : h("div", { class: "card mute" }, "No results yet."));
+}
+
+// ---------- instruments: search OpenAlgo and add stocks / indices with options ----------
+function instrumentsView() {
+  const L = st.instList;
+  if (!L) return h("div", {}, "Loading…");
+  const s = st.instSearch = st.instSearch || { q: "", items: null, msg: "" };
+  const doSearch = async () => {
+    const q = $("#isq").value.trim(); s.q = q;
+    if (q.length < 2) { s.msg = "Type at least 2 letters."; render(); return; }
+    s.msg = "Searching OpenAlgo…"; s.items = null; st.instBusy = true; render();
+    try { s.items = (await api("/api/instruments/search?q=" + encodeURIComponent(q))).items; s.msg = s.items.length ? "" : `No underlying with options matches “${q}”.`; }
+    catch (e) { s.msg = e.message; }
+    st.instBusy = false; render();
+  };
+  const add = async (sym) => {
+    if (!confirm(`Add ${sym}? Its strike step, expiry cycle and bars per day are read from OpenAlgo (takes a few seconds).`)) return;
+    s.msg = `Adding ${sym}…`; st.instBusy = true; render();
+    try { const r = await api("/api/instruments/add", { symbol: sym }); s.msg = `${sym} added: strike step ${r.added.strike_step}, ${r.added.expiry_cycle} expiry, lot ${r.added.lot_size}. Next: Data tab → choose ${sym} → Backfill.`; (s.items || []).forEach(i => { if (i.symbol === sym) i.added = true; }); }
+    catch (e) { s.msg = e.message; }
+    st.instBusy = false; await refresh();
+  };
+  const edit = (i) => {
+    const cov = prompt(`${i.name}: minimum option coverage (0.1-1). A near-the-money strike traded in fewer minutes than this makes the day incomplete.`, i.min_option_coverage); if (cov === null) return;
+    const sp = prompt(`${i.name}: estimated spread per fill, % of premium (booked in net P&L only)`, i.slippage_pct ?? 0); if (sp === null) return;
+    const dml = prompt(`${i.name}: daily max loss for strategies (rupees, empty = the strategy's own value)`, i.daily_max_loss ?? ""); if (dml === null) return;
+    act(() => api(`/api/instruments/${i.name}/update`, { min_option_coverage: cov, slippage_pct: sp, daily_max_loss: dml }));
+  };
+  const searchCard = h("div", { class: "card" }, h("b", {}, "Add a stock or index from OpenAlgo"),
+    h("div", { class: "row", style: "margin:8px 0" },
+      h("input", { id: "isq", placeholder: "symbol or name, e.g. HDFC, INFY, TATA", value: s.q, style: "flex:1", onkeydown: (e) => { if (e.key === "Enter") doSearch(); } }),
+      h("button", { class: "primary", disabled: !!st.instBusy, onclick: doSearch }, "Search")),
+    s.msg ? h("div", { class: "small" }, s.msg) : null,
+    s.items && s.items.length ? h("table", {}, h("thead", {}, h("tr", {}, ["Symbol", "Name", "Kind", "Lot", "Next expiries", ""].map(t => h("th", {}, t)))),
+      h("tbody", {}, s.items.map(i => h("tr", {}, h("td", {}, h("b", {}, i.symbol)), h("td", { class: "small" }, i.name), h("td", {}, i.kind), h("td", {}, i.lot_size), h("td", { class: "small mute" }, i.expiries.join(", ")),
+        h("td", {}, i.added ? h("span", { class: "mute small" }, "in the list") : h("button", { class: "primary small", disabled: !!st.instBusy, onclick: () => add(i.symbol) }, "Add")))))) : null,
+    h("div", { class: "mute small", style: "margin-top:6px" }, "Only underlyings with option contracts on NFO are shown (the list comes from OpenAlgo's master contract). After adding, backfill its data in the Data tab; then it can be chosen in every Run box."));
+  const rows = L.items.map(i => h("tr", {}, h("td", {}, h("b", {}, i.name), i.company && i.company !== i.name ? h("div", { class: "small mute" }, i.company) : null),
+    h("td", {}, i.kind), h("td", { class: "small" }, i.exchange), h("td", {}, i.strike_step), h("td", { class: "small" }, i.expiry_cycle),
+    h("td", {}, i.lot_size ?? "–"), h("td", {}, i.min_option_coverage), h("td", {}, (i.slippage_pct || 0) + " %"), h("td", {}, i.daily_max_loss ?? "–"),
+    h("td", {}, i.cached_days), h("td", { class: "small mute" }, i.source === "builtin" ? "built-in" : "added"),
+    h("td", {}, h("div", { class: "row" }, h("button", { class: "small", title: i.note || "", onclick: () => edit(i) }, "Edit"),
+      i.source === "user" ? h("button", { class: "danger small", onclick: () => confirm(`Remove ${i.name} from the list? Its cached data and results stay on disk.`) && act(() => api(`/api/instruments/${i.name}/delete`, {})) }, "Remove") : null))));
+  return h("div", {}, searchCard, h("div", { class: "card" }, h("b", {}, `Instruments (${L.items.length})`),
+    h("table", {}, h("thead", {}, h("tr", {}, ["Instrument", "Kind", "Underlying", "Strike step", "Expiry", "Lot", "Min coverage", "Spread est.", "Daily max loss", "Cached days", "Source", ""].map(t => h("th", {}, t)))), h("tbody", {}, rows)),
+    h("div", { class: "mute small", style: "margin-top:6px" }, `Added instruments are saved in ${L.file}. Removing one keeps its data. Spread and coverage of an added stock are defaults: check them after the first backfill (thin options need a lower coverage and a higher spread).`)));
 }
 
 // ---------- data ----------
@@ -565,7 +611,7 @@ function render() {
     return;
   }
   renderHeader(); renderTabs();
-  const v = { strategies: strategiesView, results: resultsView, data: dataView, jobs: jobsView, backup: backupView }[st.tab]();
+  const v = { strategies: strategiesView, results: resultsView, data: dataView, instruments: instrumentsView, jobs: jobsView, backup: backupView }[st.tab]();
   const focus = document.activeElement && document.activeElement.id === "q";
   $("#view").replaceChildren(v);
   if (focus) { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -576,6 +622,7 @@ async function refresh() {
     st.data = await api("/api/state");
     if (!st.page && st.tab === "results") st.results = await api("/api/results");
     if (!st.page && st.tab === "data") st.dataList = await api("/api/data");
+    if (!st.page && st.tab === "instruments" && !st.instBusy) st.instList = await api("/api/instruments");
     if (!st.page && st.tab === "backup" && !st.backupBusy) st.backup = { preview: await api("/api/backup/preview"), list: await api("/api/backup/list") };
     render();
   } catch (e) { $("#banner").replaceChildren(h("div", { class: "banner" }, "Cannot reach the server: " + e.message)); }

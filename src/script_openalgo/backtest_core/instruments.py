@@ -9,9 +9,15 @@ stock they are e.g. RELIANCE / NSE. `strike_step` is a hint: stock strikes can b
 `slippage_pct`: estimated cost per fill as % of the option premium (half the bid-ask spread). It is booked as a cost in
 net_pnl only; fill prices and gross P&L stay equal to the candle closes so the fill check still works. Indices: 0.
 `strategy_overrides`: module constants of a strategy that must be resized for this instrument (applied by the backtest
-runner only when the strategy has that constant and the user did not override it in PARAM_OVERRIDES)."""
+runner only when the strategy has that constant and the user did not override it in PARAM_OVERRIDES).
 
-INSTRUMENTS = {
+More instruments can be added from the web app (Instruments tab: search OpenAlgo, add). They are stored per workspace in
+strategy_db/instruments.json and merged over the built-in table below by reload() (called on import). Built-ins cannot be
+removed; a user entry with the same name replaces a built-in's settings."""
+import json
+import os
+
+BUILTIN = {
     "NIFTY": {
         "kind": "index",
         "index_symbol": "NIFTY",
@@ -66,6 +72,66 @@ INSTRUMENTS = {
         "slippage_pct": 1.5,           # ESTIMATE: thin options, wide spreads (net P&L only)
     },
 }
+
+INSTRUMENTS = {}          # built-ins + the workspace's added instruments; mutated in place by reload()
+FIELDS = ("kind", "index_symbol", "index_exchange", "opt_exchange", "strike_step", "strike_buffer", "expiry_cycle",
+          "max_expiry_gap_days", "min_underlying_bars", "min_option_coverage", "slippage_pct", "strategy_overrides",
+          "name", "lot_size_seen", "added", "note")
+
+
+def user_file():
+    from script_openalgo import config
+    return os.path.join(config.strategy_db_dir(), "instruments.json")
+
+
+def _load_user():
+    p = user_file()
+    if not os.path.exists(p):
+        return {}
+    try:
+        with open(p, encoding="utf-8") as f:
+            data = json.load(f)
+        return {k.upper(): v for k, v in data.items() if isinstance(v, dict) and v.get("index_symbol")}
+    except (OSError, ValueError):
+        return {}
+
+
+def reload():
+    """Rebuild INSTRUMENTS from the built-ins and the workspace file (same dict object, so importers see the change)."""
+    INSTRUMENTS.clear()
+    INSTRUMENTS.update({k: dict(v, source="builtin") for k, v in BUILTIN.items()})
+    for k, v in _load_user().items():
+        INSTRUMENTS[k] = dict(v, source="user")
+    return INSTRUMENTS
+
+
+def save_user(name, cfg):
+    """Add or replace an instrument in the workspace file and reload."""
+    name = name.upper()
+    data = _load_user()
+    data[name] = {k: cfg[k] for k in FIELDS if k in cfg}
+    p = user_file()
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=1, sort_keys=True)
+    reload()
+    return INSTRUMENTS[name]
+
+
+def remove_user(name):
+    """Remove an added instrument (built-ins stay; their user override, if any, is dropped). Cached data is not touched."""
+    name = name.upper()
+    data = _load_user()
+    if name not in data:
+        return False
+    del data[name]
+    with open(user_file(), "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=1, sort_keys=True)
+    reload()
+    return True
+
+
+reload()
 
 
 def get(name):

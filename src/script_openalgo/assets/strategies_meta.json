@@ -913,5 +913,213 @@
    "price-action",
    "researcher"
   ]
+ },
+ "bollinger_band_squeeze_breakout_scalp": {
+  "name": "Bollinger Band Squeeze Breakout Scalp",
+  "aliases": [
+   "BB Squeeze Breakout",
+   "Bollinger Squeeze Expansion Scalp",
+   "TTM-style Squeeze Breakout"
+  ],
+  "family": "volatility",
+  "spec": {
+   "name": "Bollinger Band Squeeze Breakout Scalp",
+   "aliases": [
+    "BB Squeeze Breakout",
+    "Bollinger Squeeze Expansion Scalp",
+    "TTM-style Squeeze Breakout"
+   ],
+   "family": "volatility",
+   "timeframe": "5m",
+   "indicators": [
+    "bollinger_bands",
+    "bollinger_band_width",
+    "volume"
+   ],
+   "entry_trigger": "bb_squeeze_breakout",
+   "exit_type": "fixed_rr",
+   "entry_long": "Wait for a squeeze: Bollinger Band Width (upper-lower band distance, 20-period, 2 std-dev) falls to its lowest value of the last 20 bars/sessions, i.e. the bands pinch together. Once squeezed, enter LONG when a candle CLOSES above the upper band (breakout close, not just a wick through it). Optional confirmation used by the source: breakout candle volume >= 1.5x the average volume of the bars during the squeeze.",
+   "entry_short": "Same squeeze condition (BB Width at a 20-bar low). Enter SHORT when a candle CLOSES below the lower band, with the same optional volume >=1.5x squeeze-average confirmation.",
+   "exit": "Scale out in two parts: book ~50% of the position at T1 = entry +/- 1x the squeeze range width (squeeze range = upper-band-to-lower-band distance measured at the moment of breakout). Exit the remainder at T2 = entry +/- 2x the squeeze range width, or at the nearest higher-timeframe support/resistance level, whichever is closer.",
+   "stop": "Stop-loss placed at 50% of the squeeze-time band width away from entry, on the opposite side of the trade (e.g. for a long, stop = entry - 0.5x squeeze width).",
+   "target": "T1 = 1x squeeze range width (partial book), T2 = 2x squeeze range width or nearest higher-timeframe S/R, whichever nearer (full exit).",
+   "filters": "Only act on a confirmed close beyond the band after an identified squeeze (BB Width at a 20-bar/session low); do not trade while price is still inside the bands during the squeeze itself. Source recommends short-to-medium intraday timeframes (3-min to 15-min candles); we default to 5-min for index adaptation.",
+   "tags": [
+    "both-sides",
+    "breakout",
+    "volatility",
+    "scalp",
+    "momentum"
+   ],
+   "params": {
+    "bb_period": 20,
+    "bb_stddev": 2,
+    "squeeze_lookback_bars": 20,
+    "volume_confirmation_mult": 1.5,
+    "t1_width_mult": 1.0,
+    "t2_width_mult": 2.0,
+    "stop_width_pct": 0.5
+   },
+   "testable": "adapt",
+   "testable_reason": "Band-width squeeze detection and close-beyond-band breakout entries are directly testable on 5m OHLCV. The volume >=1.5x confirmation filter needs adaptation because the NIFTY/BANKNIFTY spot index itself has no meaningful traded volume; would need to substitute index-futures volume or drop the volume filter when backtesting on the index.",
+   "data_needs": "ohlcv_5m",
+   "popularity": 4,
+   "sources": [
+    {
+     "url": "https://www.sahi.com/blogs/bollinger-bands-scalping-squeeze-breakouts-and-mean-reversion-setups",
+     "title": "Bollinger Bands Scalping: BB Squeeze & Mean Reversion",
+     "type": "broker_education"
+    },
+    {
+     "url": "https://algotest.in/blog/bollinger-bands-strategies-for-indian-traders/",
+     "title": "7 Bollinger Bands Strategies for Indian Traders: Intraday, F&O and Swing",
+     "type": "blog"
+    },
+    {
+     "url": "https://swingfolio.com/blog/bollinger-squeeze-breakout-trading-strategy",
+     "title": "Bollinger Squeeze Breakout Trading Strategy Guide",
+     "type": "blog"
+    },
+    {
+     "url": "https://traders.mba/support/bollinger-band-squeeze-breakout/",
+     "title": "Bollinger Band Squeeze Breakout",
+     "type": "broker_education"
+    }
+   ]
+  },
+  "signature": "604d9386520b6412",
+  "sources": [
+   {
+    "url": "https://www.sahi.com/blogs/bollinger-bands-scalping-squeeze-breakouts-and-mean-reversion-setups",
+    "title": "Bollinger Bands Scalping: BB Squeeze & Mean Reversion",
+    "type": "broker_education"
+   },
+   {
+    "url": "https://algotest.in/blog/bollinger-bands-strategies-for-indian-traders/",
+    "title": "7 Bollinger Bands Strategies for Indian Traders: Intraday, F&O and Swing",
+    "type": "blog"
+   },
+   {
+    "url": "https://swingfolio.com/blog/bollinger-squeeze-breakout-trading-strategy",
+    "title": "Bollinger Squeeze Breakout Trading Strategy Guide",
+    "type": "blog"
+   },
+   {
+    "url": "https://traders.mba/support/bollinger-band-squeeze-breakout/",
+    "title": "Bollinger Band Squeeze Breakout",
+    "type": "broker_education"
+   }
+  ],
+  "popularity": 4,
+  "data_needs": "ohlcv_5m",
+  "testable": "adapt",
+  "testable_reason": "Band-width squeeze detection and close-beyond-band breakout entries are directly testable on 5m OHLCV. The volume >=1.5x confirmation filter needs adaptation because the NIFTY/BANKNIFTY spot index itself has no meaningful traded volume; would need to substitute index-futures volume or drop the volume filter when backtesting on the index.",
+  "origin": "researcher",
+  "tags": [
+   "both-sides",
+   "breakout",
+   "volatility",
+   "scalp",
+   "momentum"
+  ]
+ },
+ "parabolic_sar_flip_scalp": {
+  "name": "Parabolic SAR Flip Scalp",
+  "aliases": [
+   "PSAR Flip Scalp",
+   "Parabolic SAR Reversal Scalp",
+   "SAR Dot Flip Scalp"
+  ],
+  "family": "momentum",
+  "spec": {
+   "name": "Parabolic SAR Flip Scalp",
+   "aliases": [
+    "PSAR Flip Scalp",
+    "Parabolic SAR Reversal Scalp",
+    "SAR Dot Flip Scalp"
+   ],
+   "family": "momentum",
+   "timeframe": "5m",
+   "indicators": [
+    "parabolic_sar",
+    "ema",
+    "macd"
+   ],
+   "entry_trigger": "sar_flip",
+   "exit_type": "trailing",
+   "entry_long": "When the Parabolic SAR dots flip from above price to below price (price closes above the new SAR dot), enter long on the close of the confirming candle. Optional confirmation from the source: price trading above the 200 EMA (uptrend bias) and/or the MACD histogram above its zero line.",
+   "entry_short": "When the Parabolic SAR dots flip from below price to above price (price closes below the new SAR dot), enter short on the close of the confirming candle. Optional confirmation: price below the 200 EMA (downtrend bias) and/or MACD histogram below zero.",
+   "exit": "Exit on the next opposite SAR flip (the SAR acts as a trailing stop that tightens each bar). Alternatively take a quick fixed profit roughly equal to the initial risk. Close any open position before the last 15 minutes of the session.",
+   "stop": "Initial stop at the current Parabolic SAR dot level on entry (just beyond the recent swing). The SAR dot trails each bar and becomes the moving stop.",
+   "target": "No fixed target by default; let the trailing SAR exit the trade. Source also mentions a quick scalp target about equal to the risk (1R).",
+   "filters": "Intraday only; avoid the last 15 minutes before close. Works best in trending conditions; whipsaws in sideways markets, so the optional 200 EMA / MACD filter is used to trade only with the higher-timeframe direction.",
+   "tags": [
+    "scalp",
+    "trend",
+    "momentum",
+    "trailing-stop",
+    "both-sides"
+   ],
+   "params": {
+    "sar_step": 0.02,
+    "sar_max": 0.2,
+    "ema_period": 200,
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9,
+    "exit_before_close_min": 15
+   },
+   "popularity": 3,
+   "data_needs": "ohlcv_5m",
+   "testable": "yes",
+   "testable_reason": "Parabolic SAR, EMA and MACD are all derivable from 5m OHLCV of the index; flip detection and trailing exit map directly to CE/PE option buying (long on bullish flip, short on bearish flip).",
+   "sources": [
+    {
+     "url": "https://www.litefinance.org/blog/for-beginners/best-technical-indicators/parabolic-sar-indicator/",
+     "title": "Parabolic SAR Indicator Guide: Best Settings & Strategies",
+     "type": "broker_education"
+    },
+    {
+     "url": "https://www.forexstrategiesresources.com/scalping-forex-strategies-ii/184-5-min-scalping-with-parabolic-sar-and-macd/",
+     "title": "5 min Scalping with Parabolic SAR and MACD",
+     "type": "forum"
+    },
+    {
+     "url": "https://blog.opofinance.com/en/parabolic-sar-scalping-strategy/",
+     "title": "Parabolic SAR Scalping Strategy: A Guide to Profitable Trades",
+     "type": "blog"
+    }
+   ]
+  },
+  "signature": "a6c67543cbfbb5f4",
+  "sources": [
+   {
+    "url": "https://www.litefinance.org/blog/for-beginners/best-technical-indicators/parabolic-sar-indicator/",
+    "title": "Parabolic SAR Indicator Guide: Best Settings & Strategies",
+    "type": "broker_education"
+   },
+   {
+    "url": "https://www.forexstrategiesresources.com/scalping-forex-strategies-ii/184-5-min-scalping-with-parabolic-sar-and-macd/",
+    "title": "5 min Scalping with Parabolic SAR and MACD",
+    "type": "forum"
+   },
+   {
+    "url": "https://blog.opofinance.com/en/parabolic-sar-scalping-strategy/",
+    "title": "Parabolic SAR Scalping Strategy: A Guide to Profitable Trades",
+    "type": "blog"
+   }
+  ],
+  "popularity": 3,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "testable_reason": "Parabolic SAR, EMA and MACD are all derivable from 5m OHLCV of the index; flip detection and trailing exit map directly to CE/PE option buying (long on bullish flip, short on bearish flip).",
+  "origin": "researcher",
+  "tags": [
+   "scalp",
+   "trend",
+   "momentum",
+   "trailing-stop",
+   "both-sides"
+  ]
  }
 }

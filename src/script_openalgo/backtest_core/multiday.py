@@ -149,17 +149,19 @@ def all_strategies():
 
 def print_comparison(results):
     """One line per (strategy, instrument): days, trades, P&L ... sorted by average P&L per day."""
-    print("\n" + "=" * 118)
-    print(f"{'strategy':38} {'inst':9} {'days':>4} {'trades':>6} {'no-trade days':>13} {'P&L':>9} {'avg/day':>8} {'win/loss days':>13} {'worst day':>9} {'PF':>5}")
+    print("\n" + "=" * 128)
+    print(f"{'strategy':38} {'inst':9} {'days':>4} {'trades':>6} {'no-trade days':>13} {'P&L':>9} {'net':>9} {'avg/day':>8} {'win/loss days':>13} {'worst day':>9} {'PF':>5}")
     rows = sorted([r for r in results if "aggregate" in r], key=lambda r: -(r["aggregate"]["avg_per_day"] or 0))
     for r in rows:
         a = r["aggregate"]
-        print(f"{r['strategy'][:38]:38} {r['instrument']:9} {a['days']:>4} {a['trades']:>6} {a['zero_trade_days']:>13} {a['total_pnl']:>9.0f} "
+        net = a.get("total_net", a["total_pnl"])
+        print(f"{r['strategy'][:38]:38} {r['instrument']:9} {a['days']:>4} {a['trades']:>6} {a['zero_trade_days']:>13} {a['total_pnl']:>9.0f} {net:>9.0f} "
               f"{(a['avg_per_day'] or 0):>8.0f} {str(a['win_days']) + '/' + str(a['loss_days']):>13} {(a['worst_day'] or 0):>9.0f} {a['profit_factor'] if a['profit_factor'] is not None else '-':>5}")
     for r in results:
         if "error" in r:
             print(f"{r['strategy'][:38]:38} {r['instrument']:9} not run: {r['error'][:70]}")
-    print("Gross P&L (no slippage or charges). Few days = LOW SAMPLE: do not rank strategies on this. Only nearest-expiry days unless --allow-far.")
+    print("P&L = gross (fills at candle closes). net = after the instrument's ESTIMATED spread (slippage_pct; 0 for indices), no charges. "
+          "Few days = LOW SAMPLE: do not rank strategies on this. Only nearest-expiry days unless --allow-far.")
 
 
 if __name__ == "__main__":

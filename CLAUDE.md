@@ -32,6 +32,8 @@ Research, backtest and manage OpenAlgo option strategies against an OpenAlgo ser
 
 Backtest files call `instruments.apply_strategy_overrides(strat, instrument, PARAM_OVERRIDES)` (sets UNDERLYING, INDEX_EXCHANGE and the instrument's `strategy_overrides`; user overrides win).
 
+**Adding instruments**: web app tab **Instruments** searches OpenAlgo (`/api/v1/search`; the stock list is OpenAlgo's master contract) and adds any underlying with options on NFO. `backtest_core/discovery.py` derives the settings from the listed contracts (exchange NSE/NSE_INDEX, strike step near the last close, weekly/monthly cycle, bars per session, lot); defaults for added stocks: coverage 0.80, spread 1.0 % (edit after the first backfill). Added instruments live in the workspace file `strategy_db/instruments.json` (git-tracked), merged over the built-in `BUILTIN` table by `instruments.reload()`; built-ins cannot be removed. OpenAlgo's search returns at most 500 rows, so search candidates are confirmed with an exact NFO query each.
+
 ## Plan summary (plan.md sections)
 1-9. Strategy + backtest pair, replay design, data from OpenAlgo `history(source="api")` cached as parquet with per-day manifests, agents (strategy-writer, backtest-writer, backtest-reviewer, data-downloader), orchestrator with a data gate and review loop.
 10-13. Decisions, Phase 0 findings (OpenAlgo API quirks), build status.

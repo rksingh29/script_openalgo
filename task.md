@@ -223,3 +223,6 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [ ] Replace the spread estimate with measured bid/ask (snapshots during market hours)
   - All 13 strategies over both stocks: 286 day-runs, all script-checked, no errors. Best net: RELIANCE ORB +10753, nifty_direction_ce_pe +7187, MACD +3457 (13 days, LOW SAMPLE). OFSS: every strategy negative net after the 1.5 % spread estimate.
 - [ ] vwap_reclaim_scalp, stochastic_oscillator_crossover_scalp, s_9_21_ema_crossover_scalp: 0 trades on every instrument incl. NIFTY/BANKNIFTY; check their entry conditions
+- [x] Instruments tab: search OpenAlgo for underlyings with options, add with auto-derived settings (strike step, expiry cycle, bars per day, lot), edit coverage/spread/daily max loss, remove added ones; stored in `strategy_db/instruments.json` (2026-10-20). Tested end to end with HDFCBANK (add -> backfill 3 days -> ORB run, fills/P&L checked) and then removed again
+- [x] Multi-day comparison table shows net (after the estimated spread) next to gross
+- [ ] Measure each added stock's real spread (bid/ask snapshots) instead of the 1.0 % default

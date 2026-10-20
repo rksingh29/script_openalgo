@@ -471,6 +471,7 @@ def register_user_strategy(con, slug, name, family="user", notes=""):
 # ---------------- sync: strategy files and result folders on disk -> database ----------------
 def _result_dir_re():
     from script_openalgo.backtest_core import instruments
+    instruments.reload()
     names = "|".join(sorted((re.escape(n) for n in instruments.INSTRUMENTS), key=len, reverse=True))
     return re.compile(r"^(?P<slug>.+?)_(?P<inst>" + names + r")_(?P<day>\d{4}-\d{2}-\d{2})_(?P<t>\d{6})$")
 
@@ -546,10 +547,11 @@ def sync_from_disk(con, cache_dir=None):
 
     # newest result folder per (slug, instrument, day)
     best = {}
+    result_re = _result_dir_re()                     # rebuilt each time: instruments can be added while the app runs
     if os.path.isdir(RESULTS_DIR):
         for d in os.listdir(RESULTS_DIR):
             full = os.path.join(RESULTS_DIR, d)
-            m = RESULT_DIR_RE.match(d)
+            m = result_re.match(d)
             inst = m.group("inst") if m else "NIFTY"
             m = m or LEGACY_DIR_RE.match(d)
             if not m or not os.path.exists(os.path.join(full, "summary.json")) or m.group("slug") not in ids:

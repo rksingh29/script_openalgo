@@ -10,6 +10,7 @@ import csv
 import glob
 import json
 import os
+import re
 import shutil
 import sys
 
@@ -210,6 +211,103 @@ def jobs_clear():
     con.commit()
     con.close()
     return jsonify({"deleted": len(rows)})
+
+
+# ---------------- instruments: search OpenAlgo, add / edit / remove ----------------
+def _inst_row(name, c):
+    return {"name": name, "source": c.get("source"), "kind": c.get("kind"), "company": c.get("name") or name,
+            "exchange": c.get("index_exchange"), "strike_step": c.get("strike_step"), "expiry_cycle": c.get("expiry_cycle"),
+            "min_underlying_bars": c.get("min_underlying_bars"), "min_option_coverage": c.get("min_option_coverage"),
+            "slippage_pct": c.get("slippage_pct", 0), "daily_max_loss": (c.get("strategy_overrides") or {}).get("DAILY_MAX_LOSS"),
+            "lot_size": c.get("lot_size_seen"), "added": c.get("added"), "note": c.get("note"),
+            "cached_days": len(glob.glob(os.path.join(cache_dir(), f"manifest_{name}_*.json")))}
+
+
+@app.get("/api/instruments")
+def instruments_list():
+    instruments.reload()
+    return jsonify({"items": [_inst_row(k, v) for k, v in instruments.INSTRUMENTS.items()], "file": instruments.user_file()})
+
+
+@app.get("/api/instruments/search")
+def instruments_search():
+    from script_openalgo.backtest_core import discovery
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return err("type at least 2 letters")
+    try:
+        return jsonify({"items": discovery.search(q)})
+    except (RuntimeError, OSError, ValueError) as e:
+        return err(f"OpenAlgo search failed: {e}", 502)
+    except SystemExit as e:                                  # API key missing
+        return err(str(e), 502)
+
+
+def _num(v, lo, hi, name):
+    if v in (None, ""):
+        return None
+    x = float(v)
+    if not lo <= x <= hi:
+        raise ValueError(f"{name} must be between {lo} and {hi}")
+    return x
+
+
+@app.post("/api/instruments/add")
+def instruments_add():
+    from script_openalgo.backtest_core import discovery
+    b = request.json or {}
+    sym = (b.get("symbol") or "").strip().upper()
+    if not re.fullmatch(r"[A-Z0-9&-]{1,30}", sym):
+        return err("invalid symbol")
+    try:
+        c = discovery.add(sym, min_option_coverage=_num(b.get("min_option_coverage"), 0.1, 1, "coverage"),
+                          slippage_pct=_num(b.get("slippage_pct"), 0, 20, "spread %"),
+                          daily_max_loss=_num(b.get("daily_max_loss"), 0, 10_000_000, "daily max loss"))
+    except ValueError as e:
+        return err(str(e))
+    except (RuntimeError, OSError) as e:
+        return err(str(e), 502)
+    except SystemExit as e:
+        return err(str(e), 502)
+    return jsonify({"added": _inst_row(sym, c)})
+
+
+@app.post("/api/instruments/<name>/update")
+def instruments_update(name):
+    name = name.upper()
+    if name not in instruments.INSTRUMENTS:
+        return err("unknown instrument", 404)
+    b = request.json or {}
+    c = {k: v for k, v in instruments.INSTRUMENTS[name].items() if k != "source"}
+    try:
+        for k, lo, hi in (("min_option_coverage", 0.1, 1), ("slippage_pct", 0, 20), ("strike_step", 0.05, 100000)):
+            v = _num(b.get(k), lo, hi, k)
+            if v is not None:
+                c[k] = int(v) if k == "strike_step" and v.is_integer() else v
+        if "daily_max_loss" in b:
+            ov = dict(c.get("strategy_overrides") or {})
+            v = _num(b.get("daily_max_loss"), 0, 10_000_000, "daily max loss")
+            if v is None:
+                ov.pop("DAILY_MAX_LOSS", None)
+            else:
+                ov["DAILY_MAX_LOSS"] = v
+            c["strategy_overrides"] = ov
+    except ValueError as e:
+        return err(str(e))
+    instruments.save_user(name, c)                           # a built-in edited here gets a workspace override
+    return jsonify({"item": _inst_row(name, instruments.INSTRUMENTS[name])})
+
+
+@app.post("/api/instruments/<name>/delete")
+def instruments_delete(name):
+    name = name.upper()
+    c = instruments.INSTRUMENTS.get(name)
+    if not c:
+        return err("unknown instrument", 404)
+    if c.get("source") != "user":
+        return err("built-in instruments cannot be removed", 409)
+    instruments.remove_user(name)
+    return jsonify({"removed": name, "builtin_restored": name in instruments.INSTRUMENTS})
 
 
 # ---------------- actions ----------------

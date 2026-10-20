@@ -350,6 +350,15 @@ script-openalgo multiday --strategy opening_range_breakout_orb --instrument RELI
 - Rupee limits are resized per stock where needed (OFSS daily loss cap 6000). The values are in `backtest_core/instruments.py` (`strategy_overrides`).
 - For LIVE trading on a stock, set `UNDERLYING = "RELIANCE"` and `INDEX_EXCHANGE = "NSE"` in the strategy file. Live strike lookup only works while the market is open.
 
+**Adding more stocks (Instruments tab)**
+1. Open the **Instruments** tab, type part of a symbol or name (for example `HDFC`, `INFY`, `TATA`) and press Search. The list comes from OpenAlgo; only stocks and indices that have options on NFO are shown.
+2. Click **Add**. The app reads the strike step, the expiry cycle (weekly or monthly), the number of candles per day and the lot size from OpenAlgo. This takes a few seconds.
+3. Go to the **Data** tab, choose the new stock and click Backfill. After that it appears in every Run box.
+4. Check the defaults with **Edit**: minimum option coverage (0.80) and estimated spread (1.0 %). Lower the coverage and raise the spread for stocks with thin options; set a daily max loss if the lot is large.
+5. **Remove** takes a stock off the list; its downloaded data and results stay. NIFTY, BANKNIFTY, RELIANCE and OFSS are built in and cannot be removed (they can be edited).
+
+Added stocks are saved in `strategy_db/instruments.json` of the workspace.
+
 ## 16. Deleting results and logs
 
 - **Results tab**: each run has a × button, each date/strategy group has "Delete N run(s)", and the run window has "Delete run". You are asked whether to delete the result folder on disk as well. If you keep the files, the run is remembered as deleted and does not come back when the app syncs the results folder.
