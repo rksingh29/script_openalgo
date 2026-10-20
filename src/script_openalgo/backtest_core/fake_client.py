@@ -85,6 +85,8 @@ class FakeClient:
         every 1-minute candle inside [T, T+interval) has completed."""
         if str(interval).upper() in ("D", "1D"):
             return self._daily(symbol, start_date, end_date)
+        if end_date and date.fromisoformat(str(end_date)[:10]) < self.day:
+            return self._history_before_today(symbol, interval, start_date, end_date)
         raw = self._df(symbol)
         if raw is None or raw.empty:
             return pd.DataFrame()
@@ -102,6 +104,25 @@ class FakeClient:
         last_1m_end = sub.index[-1] + timedelta(minutes=1)   # end of the last available 1m bar
         agg = agg[agg.index + pd.Timedelta(minutes=bar_minutes) <= last_1m_end]
         return agg
+
+    def _history_before_today(self, symbol, interval, start_date, end_date):
+        """Intraday bars of earlier, cached days (indicator warm-up). Never includes the simulated day, so no lookahead;
+        days missing from the cache are skipped."""
+        bar_minutes = _interval_minutes(interval)
+        d = date.fromisoformat(str(start_date)[:10]) if start_date else date.fromisoformat(str(end_date)[:10])
+        last = date.fromisoformat(str(end_date)[:10])
+        parts = []
+        while d <= last:
+            raw = dl.load_series(symbol, d) if d.weekday() < 5 else None
+            if raw is not None and not raw.empty:
+                if bar_minutes == 1:
+                    parts.append(raw[["open", "high", "low", "close", "volume"]])
+                else:
+                    origin = raw.index[0].normalize() + timedelta(hours=9, minutes=15)
+                    parts.append(raw.resample(f"{bar_minutes}min", origin=origin, label="left", closed="left").agg(
+                        {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}).dropna(subset=["open"]))
+            d += timedelta(days=1)
+        return pd.concat(parts) if parts else pd.DataFrame()
 
     def _daily(self, symbol, start_date=None, end_date=None):
         """Daily bars of the index. Only COMPLETED days are returned: the bar of the simulated day itself is not known yet."""

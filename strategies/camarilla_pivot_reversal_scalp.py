@@ -69,6 +69,14 @@ Adaptations from the raw research spec (documented, not guesses):
   - STOP_BUFFER_PCT / STOP_MAX_PCT / MAX_TRADES_PER_DAY / DAILY_MAX_LOSS /
     NO_NEW_ENTRY_AFTER / SQUARE_OFF_TIME are safety caps, not source rules.
 
+Optional regime filter (USE_REGIME_FILTER, off by default = original behaviour). Camarilla reversals are meant for
+ranging markets; on a trending day S3/R3 are speed bumps. When on, a signal is taken only if the 5m ADX(ADX_LENGTH,
+Wilder, as TradingView's ta.dmi) of the signal candle is below ADX_THRESHOLD. ADX lags, so USE_BW_FILTER can be added:
+the signal is blocked when Bollinger bandwidth, (upper-lower)/middle, is more than BW_EXPANSION times its average
+over the previous BW_LOOKBACK candles (volatility expanding). ADX/bands are computed on closed candles only and are
+warmed up with the last WARMUP_BARS 5m candles of earlier days, so they are valid from the first candle of the day.
+BW_EXPANSION is a judgement value, not from the source.
+
 Run first with OpenAlgo Analyzer (paper) mode ON. This script places real
 orders once Analyzer is switched off -- do that only after a satisfactory
 backtest and with the user's explicit go-ahead.
@@ -106,6 +114,17 @@ MIN_WICK_RATIO = 0.4           # rejection-candle proxy for "clear rejection can
 STOP_BUFFER_PCT = 0.05         # stop placed this % beyond S4/R4
 STOP_MAX_PCT = 0.6             # sanity cap: skip signal if risk distance > this % of price
 
+# ---- optional regime filter (see docstring) ----
+USE_REGIME_FILTER = False      # False = original, unfiltered behaviour
+ADX_LENGTH = 14
+ADX_THRESHOLD = 20             # trade only while ADX < this
+USE_BW_FILTER = False          # extra guard against the ADX lag; only used when USE_REGIME_FILTER is on
+BB_LENGTH = 20
+BB_MULT = 2.0
+BW_LOOKBACK = 5
+BW_EXPANSION = 1.25            # block if bandwidth > this x the average of the previous BW_LOOKBACK candles
+WARMUP_BARS = 100              # earlier-day 5m candles used to warm the indicators up
+
 POLL_SEC = 20                  # main loop tick / stop-target check interval
 
 # ---- daily safety caps (not in the source spec; same pattern as other strategies here) ----
@@ -135,6 +154,42 @@ def compute_camarilla_levels(high, low, close, multiplier=CAMARILLA_MULTIPLIER):
     }
 
 
+def adx_value(bars, n=ADX_LENGTH):
+    """ADX of the last bar (Wilder smoothing, seeded with a simple average like TradingView's ta.dmi). None if there
+    are fewer than 2*n bars."""
+    if len(bars) < 2 * n + 1:
+        return None
+    tr, pdm, mdm = [], [], []
+    for i in range(1, len(bars)):
+        b, p = bars[i], bars[i - 1]
+        up, dn = b["h"] - p["h"], p["l"] - b["l"]
+        pdm.append(up if up > dn and up > 0 else 0.0)
+        mdm.append(dn if dn > up and dn > 0 else 0.0)
+        tr.append(max(b["h"] - b["l"], abs(b["h"] - p["c"]), abs(b["l"] - p["c"])))
+
+    def rma(xs):
+        out = [sum(xs[:n]) / n]
+        for x in xs[n:]:
+            out.append((out[-1] * (n - 1) + x) / n)
+        return out
+    atr, ps, ms = rma(tr), rma(pdm), rma(mdm)
+    dx = []
+    for a, p, m in zip(atr, ps, ms):
+        pi, mi = (100 * p / a, 100 * m / a) if a else (0.0, 0.0)
+        dx.append(100 * abs(pi - mi) / (pi + mi) if pi + mi else 0.0)
+    return rma(dx)[-1]
+
+
+def bandwidth(bars, n=BB_LENGTH, mult=BB_MULT):
+    """(upper - lower) / middle of the Bollinger Bands on the last n closes; None if too few bars."""
+    if len(bars) < n:
+        return None
+    cs = [b["c"] for b in bars[-n:]]
+    mid = sum(cs) / n
+    sd = (sum((c - mid) ** 2 for c in cs) / n) ** 0.5
+    return 2 * mult * sd / mid if mid else None
+
+
 class Strategy:
     def __init__(self, client, clock=datetime.now, sleeper=time.sleep):
         self.c = client
@@ -144,6 +199,7 @@ class Strategy:
         self.levels = None        # {"r3","r4","s3","s4","pivot"} for today, set once at session start
 
         self.bars = []             # completed 5m index candles: {t, o, h, l, c}
+        self.warm = []             # last WARMUP_BARS candles of earlier days (indicator warm-up only)
         self.processed_bars = 0
 
         self.position = None      # {"side","symbol","qty","entry_premium","index_entry","stop","target"}
@@ -216,6 +272,50 @@ class Strategy:
             f"R4 {self.levels['r4']:.2f} R3 {self.levels['r3']:.2f} "
             f"Pivot {self.levels['pivot']:.2f} "
             f"S3 {self.levels['s3']:.2f} S4 {self.levels['s4']:.2f}")
+
+    def setup_warmup(self):
+        if not USE_REGIME_FILTER:
+            return
+        today = self.now().date()
+        try:
+            df = self.c.history(symbol=UNDERLYING, exchange=INDEX_EXCHANGE, interval=TIMEFRAME,
+                                 start_date=(today - timedelta(days=7)).isoformat(),
+                                 end_date=(today - timedelta(days=1)).isoformat(), source=HISTORY_SOURCE)
+        except Exception as e:
+            log(f"warm-up history exception: {e}")
+            return
+        if not hasattr(df, "empty") or df.empty:
+            log("warm-up history empty: ADX will only be valid after about 30 candles today")
+            return
+        bars = []
+        for ts, row in df.iterrows():
+            t = ts.to_pydatetime()
+            if t.tzinfo is not None:
+                t = t.replace(tzinfo=None)
+            if t.date() < today:
+                bars.append({"t": t, "o": float(row["open"]), "h": float(row["high"]),
+                             "l": float(row["low"]), "c": float(row["close"])})
+        bars.sort(key=lambda b: b["t"])
+        self.warm = bars[-WARMUP_BARS:]
+        log(f"regime filter warm-up: {len(self.warm)} earlier 5m candles")
+
+    def regime_block(self, i):
+        """None if the market looks ranging enough to trade, else the reason to skip (uses candles up to bar i only)."""
+        if not USE_REGIME_FILTER:
+            return None
+        seq = self.warm + self.bars[:i + 1]
+        adx = adx_value(seq)
+        if adx is None:
+            return "ADX not available yet (not enough candles)"
+        if adx >= ADX_THRESHOLD:
+            return f"trending: ADX {adx:.1f} >= {ADX_THRESHOLD}"
+        if USE_BW_FILTER:
+            bw = bandwidth(seq)
+            prev = [bandwidth(seq[:len(seq) - k]) for k in range(1, BW_LOOKBACK + 1)]
+            prev = [x for x in prev if x]
+            if bw and prev and bw > BW_EXPANSION * sum(prev) / len(prev):
+                return f"volatility expanding: bandwidth {bw:.4f} > {BW_EXPANSION}x recent {sum(prev) / len(prev):.4f}"
+        return None
 
     def _fetch_bars(self):
         today = self.now().strftime("%Y-%m-%d")
@@ -295,6 +395,10 @@ class Strategy:
 
         if self.position:
             log(f"Signal at bar {i} ({bar['t']:%H:%M}) ignored: position already open")
+            return
+        why = self.regime_block(i)
+        if why:
+            log(f"Signal at bar {i} ({bar['t']:%H:%M}) skipped by regime filter: {why}")
             return
         if not self.in_time_window():
             return
@@ -419,6 +523,7 @@ class Strategy:
             pass
         self.wait_until(self.at(SESSION_START))
         self.setup_levels()
+        self.setup_warmup()
         while True:
             if self.now() >= self.at(SQUARE_OFF_TIME):
                 if self.position:
