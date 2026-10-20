@@ -141,11 +141,11 @@ function strategiesView() {
       h("td", { class: "num mute" }, s.queue_pos || ""),
       h("td", {}, h("a", { href: "#/strategy/" + s.id, style: "color:inherit;font-weight:600" }, s.name), h("div", { class: "mute small" }, s.family + " · " + s.origin + (s.pinned ? " · pinned" : "") + (s.code_edited_at ? " · edited" : "")),
         h("div", {}, s.tags.map(t => h("span", { class: "chip", onclick: () => { st.filter.tag = t; render(); } }, t)))),
-      h("td", {}, badge(s.archived_at ? "archived" : s.status, running), running ? h("div", { class: "small mute" }, (s.phase || "") + " " + (s.status_note || "")) : (s.status_note ? h("div", { class: "small mute" }, s.status_note) : null)),
+      h("td", {}, badge(s.archived_at ? "archived" : s.status, running), running ? progressBox(s) : (s.status_note ? h("div", { class: "small mute" }, s.status_note) : null)),
       h("td", { class: "small" }, s.testable + (s.testable_reason ? " – " + s.testable_reason.slice(0, 60) : "")),
       h("td", {}, s.stats ? Object.entries(s.stats).map(([ins, x]) => h("div", { class: "small" }, h("b", {}, ins + " "), `${x.days}d · total `, money(x.total), " · avg ", money(x.avg), x.low_sample ? h("span", { class: "mute" }, " · low sample") : null, x.far_days ? h("span", { class: "mute", title: "days where the cached contract was not the nearest expiry; not in the numbers above" }, ` · +${x.far_days} far-expiry day(s) ${x.far_total >= 0 ? "+" : ""}${Math.round(x.far_total)}`) : null)) : h("span", { class: "mute" }, "–")),
       h("td", {}, h("div", { class: "row" }, inst, date,
-        h("button", { disabled: running || s.testable === "no", onclick: () => act(() => api(`/api/strategies/${s.id}/run`, { instrument: $("#inst" + s.id).value, date: $("#date" + s.id).value })) }, "Run"),
+        running ? h("button", { class: "danger", onclick: () => confirm("Stop this test and put the strategy back in the queue?") && act(() => api(`/api/strategies/${s.id}/stop`, {})) }, s.job ? "Stop" : "Reset") : h("button", { disabled: s.testable === "no", onclick: () => act(() => api(`/api/strategies/${s.id}/run`, { instrument: $("#inst" + s.id).value, date: $("#date" + s.id).value })) }, "Run"),
         h("button", { onclick: () => act(() => api(`/api/strategies/${s.id}/pin`, {})) }, s.pinned ? "Unpin" : "Pin"),
         (s.status === "failed" || s.status === "needs_review" || s.status === "waiting") ? h("button", { onclick: () => act(() => api(`/api/strategies/${s.id}/requeue`, {})) }, "Re-queue") : null,
         h("button", { onclick: () => act(() => api(`/api/strategies/${s.id}/archive`, { on: !s.archived_at })) }, s.archived_at ? "Unarchive" : "Archive"),
@@ -155,6 +155,14 @@ function strategiesView() {
     h("thead", {}, h("tr", {}, ["#", "Strategy", "Status", "Testable", "Performance (gross, latest run per day)", "Actions"].map(t => h("th", {}, t)))),
     h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 6, class: "mute" }, "No strategies yet. Click “Research: seed 10”."))))),
     researchLog());
+}
+function progressBox(s) {
+  if (!s.job) return h("div", { class: "small neg" }, "stuck: no job is running. Click Reset, then Run again.");
+  const mins = s.job.started ? Math.max(0, Math.round((Date.now() - new Date(s.job.started.replace(" ", "T")).getTime()) / 60000)) : 0;
+  const pct = s.pct;
+  return h("div", { class: "small mute" },
+    pct != null ? h("div", { style: "background:#8883;border-radius:3px;height:6px;margin:4px 0;width:140px" }, h("div", { style: `background:var(--acc);height:6px;border-radius:3px;width:${pct}%` })) : null,
+    (pct != null ? pct + "% · " : "") + (s.phase || s.job.kind) + " · " + mins + " min" + (s.status_note ? " · " + s.status_note : ""));
 }
 function researchLog() {
   const l = st.data.research_log;
@@ -285,7 +293,7 @@ function renderPage() {
     h("div", { class: "row" },
       h("a", { href: "#" }, "← All strategies"), h("span", { style: "flex:1" }),
       inst, date,
-      h("button", { class: "primary", disabled: running || d.testable === "no", onclick: () => pact(() => api(`/api/strategies/${d.id}/run`, { instrument: $("#pinst").value, date: $("#pdate").value })) }, "Run"),
+      running ? h("button", { class: "danger", onclick: () => confirm("Stop this test and put the strategy back in the queue?") && pact(() => api(`/api/strategies/${d.id}/stop`, {})) }, live && live.job === null ? "Reset" : "Stop") : h("button", { class: "primary", disabled: d.testable === "no", onclick: () => pact(() => api(`/api/strategies/${d.id}/run`, { instrument: $("#pinst").value, date: $("#pdate").value })) }, "Run"),
       h("button", { onclick: () => { const n = prompt("Name for the copy (it gets its own code files and can be edited and run separately):", d.name + " copy"); if (n) act(async () => { const r = await api(`/api/strategies/${d.id}/copy`, { name: n }); location.hash = "#/strategy/" + r.id; }); } }, "Copy…"),
       h("button", { onclick: () => { const n = prompt("New name:", d.name); if (n) pact(() => api(`/api/strategies/${d.id}/rename`, { name: n })); } }, "Rename"),
       h("button", { onclick: () => pact(() => api(`/api/strategies/${d.id}/archive`, { on: !d.archived_at })) }, d.archived_at ? "Unarchive" : "Archive"),

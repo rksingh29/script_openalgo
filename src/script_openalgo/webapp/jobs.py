@@ -303,7 +303,7 @@ def _resume(ws, j):
 def callbacks(ws, j):
     meta = json.loads(j["meta"] or "{}")
     if j["kind"] == "test":
-        return _test_callbacks(j["strategy_id"], meta.get("slug"), meta.get("instrument", "NIFTY"))
+        return _test_callbacks(ws, j["strategy_id"], meta.get("slug"), meta.get("instrument", "NIFTY"))
     if j["kind"] == "multiday":
         return _multiday_callbacks(ws, j["strategy_id"], meta.get("slug"), meta.get("instrument", "NIFTY"))
     if j["kind"] == "research":
@@ -328,7 +328,7 @@ def _research_done(con, jid, status, code, lines):
     db.log(con, jid, "job_" + status, None, summary[:300])
 
 
-def _test_callbacks(sid, slug, instrument):
+def _test_callbacks(ws, sid, slug, instrument):
     def on_line(con, jid, line):
         m = re.search(r"=== phase: (\w+) ===", line)
         if m:
@@ -421,9 +421,18 @@ def start_research(ws, count, mode):
 
 
 # ---------------- strategy test pipeline (orchestrator) ----------------
-def start_test(ws, sid, day=None, instrument="NIFTY", answer=None, resume=False):
+def start_test(ws, sid, day=None, instrument="NIFTY", answer=None, resume=False, queued_start=False):
     con = db.connect(ws)
     if running(con, "test"):
+        if answer is None and not resume and not queued_start:        # a fresh manual run waits its turn
+            s = con.execute("SELECT status FROM strategies WHERE id=?", (sid,)).fetchone()
+            if s and s["status"] == "in_progress":
+                con.close()
+                raise RuntimeError("this strategy is already being tested")
+            db.set_setting(con, f"req_{sid}", json.dumps({"day": day, "instrument": instrument}))
+            db.set_status(con, sid, "queued", "", "queued: starts when the running test finishes")
+            con.close()
+            return None
         con.close()
         raise RuntimeError("another test is already running (one at a time)")
     pu = paused_until(con)
@@ -621,7 +630,19 @@ class AutoRunner(threading.Thread):
                 con = db.connect(ws)
                 on = db.get_setting(con, "auto_run", "0") == "1"
                 nxt = None
-                waiting = con.execute("SELECT 1 FROM strategies WHERE status='waiting'").fetchone()
+                if not running(con, "test") and not paused_until(con):       # manual runs that were queued behind another test
+                    for r in db.rows(con, "SELECT key, value FROM settings WHERE key LIKE 'req_%'"):
+                        sid = int(r["key"][4:])
+                        req = json.loads(r["value"])
+                        con.execute("DELETE FROM settings WHERE key=?", (r["key"],))
+                        con.commit()
+                        st = con.execute("SELECT status FROM strategies WHERE id=?", (sid,)).fetchone()
+                        if st and st["status"] == "queued":
+                            con.close()
+                            start_test(ws, sid, req.get("day"), req.get("instrument") or "NIFTY", queued_start=True)
+                            con = db.connect(ws)
+                            break
+                waiting =con.execute("SELECT 1 FROM strategies WHERE status='waiting'").fetchone()
                 if on and not running(con, "test") and not paused_until(con) and not waiting and gate.check(con, 1)[0]:
                     nxt = db.next_queued(con)
                 con.close()

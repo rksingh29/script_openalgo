@@ -52,6 +52,8 @@ def index():
 
 
 # ---------------- state ----------------
+PHASE_PCT = {"starting": 3, "strategy": 10, "data": 30, "backtest": 55, "review": 80, "learn": 95}    # test phases, rough share done
+
 @app.get("/api/state")
 def state():
     con = conn()
@@ -65,6 +67,11 @@ def state():
         r["tags"] = json.loads(r["tags"] or "[]")
         r["stats"] = stats.get(r["id"])
         r["queue_pos"] = q_order.get(r["id"])
+        if r["status"] == "in_progress":                 # progress + whether a job is really running (else it is stuck)
+            j = con.execute("SELECT id,kind,started,phase FROM jobs WHERE strategy_id=? AND status='running' "
+                            "ORDER BY id DESC", (r["id"],)).fetchone()
+            r["job"] = dict(j) if j else None
+            r["pct"] = PHASE_PCT.get(r["phase"]) if j else None
         strategies.append(r)
     js = db.rows(con, "SELECT id,kind,strategy_id,label,status,phase,started,ended,exit_code,note,questions "
                       "FROM jobs ORDER BY id DESC LIMIT 25")
@@ -175,7 +182,7 @@ def run_strategy(sid):
         jid = jobs.start_test(ws(), sid, day, inst)
     except RuntimeError as e:
         return err(str(e), 409)
-    return jsonify({"job_id": jid})
+    return jsonify({"job_id": jid, "queued": jid is None})
 
 
 @app.post("/api/jobs/<int:jid>/answer")
@@ -194,6 +201,23 @@ def answer(jid):
     except RuntimeError as e:
         return err(str(e), 409)
     return jsonify({"job_id": new})
+
+
+@app.post("/api/strategies/<int:sid>/stop")
+def stop_strategy(sid):
+    """Stop whatever is running for this strategy and put it back in the queue (also clears a stuck in_progress)."""
+    n = 0
+    con = conn()
+    ids = [r["id"] for r in con.execute("SELECT id FROM jobs WHERE strategy_id=? AND status='running'", (sid,))]
+    con.close()
+    for jid in ids:
+        n += bool(jobs.cancel(ws(), jid))
+    con = conn()
+    con.execute("UPDATE strategies SET status='queued', phase='', status_note=?, updated=? WHERE id=? AND status='in_progress'",
+                ("stopped by user" if n else "reset (nothing was running)", db.now(), sid))
+    con.commit()
+    con.close()
+    return jsonify({"stopped": n})
 
 
 @app.post("/api/jobs/<int:jid>/cancel")
