@@ -88,7 +88,8 @@ def previous_trading_day(today=None):
     for _ in range(10):
         if d.weekday() < 5:
             cached = load_series(cfg["index_symbol"], d)           # a day already in the cache needs no API call
-            if (cached is not None and len(cached) >= MIN_BARS_INDEX) or                     len(fetch_candles(cfg["index_symbol"], cfg["index_exchange"], d)) > 0:
+            if (cached is not None and len(cached) >= MIN_BARS_INDEX) or (
+                    len(fetch_candles(cfg["index_symbol"], cfg["index_exchange"], d)) > 0):
                 return d
         d -= timedelta(days=1)
     raise RuntimeError("no trading day found in the last 10 days")
