@@ -68,7 +68,7 @@ def run_day(slug, instrument, day):
         findings = [f["issue"] for f in v["findings"] if f["severity"] in ("high", "medium")][:3]
     except Exception as e:                                       # a verifier problem must not hide the result
         verdict, findings = "unverified", [str(e)[:120]]
-    return {"day": day.isoformat(), "trades": summ.get("trades"), "gross_pnl": summ.get("gross_pnl"),
+    return {"day": day.isoformat(), "trades": summ.get("trades"), "gross_pnl": summ.get("gross_pnl"), "net_pnl": summ.get("net_pnl"),
             "win_rate": summ.get("win_rate"), "max_drawdown": summ.get("max_drawdown"), "result_dir": rdir,
             "verdict": verdict, "findings": findings, "summary": summ}
 
@@ -87,7 +87,8 @@ def aggregate(rows):
             "win_days": len(wins), "loss_days": len(losses), "flat_days": len(ok) - len(wins) - len(losses),
             "best_day": max(pnls) if pnls else None, "worst_day": min(pnls) if pnls else None,
             "max_drawdown": round(dd, 1), "profit_factor": round(sum(wins) / abs(sum(losses)), 2) if losses else None,
-            "trades": sum(r["trades"] or 0 for r in ok), "zero_trade_days": sum(1 for r in ok if not r["trades"])}
+            "trades": sum(r["trades"] or 0 for r in ok), "zero_trade_days": sum(1 for r in ok if not r["trades"]),
+            "total_net": round(sum((r.get("net_pnl") if r.get("net_pnl") is not None else r["gross_pnl"] or 0) for r in ok), 1)}
 
 
 def run_range(slug, instrument="NIFTY", start=None, end=None, last_days=None, allow_far=False, workers=2):
@@ -129,7 +130,11 @@ def print_report(out):
     a = out["aggregate"]
     print(f"TOTAL  days {a['days']} | trades {a['trades']} ({a['zero_trade_days']} days without a trade) | P&L {a['total_pnl']:+.0f} | avg/day {a['avg_per_day']} | "
           f"win/loss/flat days {a['win_days']}/{a['loss_days']}/{a['flat_days']} | worst day {a['worst_day']} | max drawdown {a['max_drawdown']} | profit factor {a['profit_factor']}")
-    print("Gross P&L, no slippage or charges. " + ("LOW SAMPLE (< 20 days)." if a["days"] < 20 else ""))
+    if a.get("total_net") is not None and abs(a["total_net"] - a["total_pnl"]) > 0.5:
+        print(f"NET after the estimated spread (instrument slippage_pct): {a['total_net']:+.0f}  (gross {a['total_pnl']:+.0f})")
+        print("Gross P&L above; net uses an ESTIMATED spread, not real quotes. " + ("LOW SAMPLE (< 20 days)." if a["days"] < 20 else ""))
+    else:
+        print("Gross P&L, no slippage or charges. " + ("LOW SAMPLE (< 20 days)." if a["days"] < 20 else ""))
 
 
 def all_strategies():

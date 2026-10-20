@@ -194,19 +194,32 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [ ] Choose a licence for the package (none set)
 - [ ] The Claude CLI is not part of the package; document/verify agent runs on the other machine
 
-## Phase 15: stocks and stock options, first RELIANCE then OFSS (PLANNED 2026-10-20, see plan.md section 16)
+## Phase 15: stocks and stock options, first RELIANCE then OFSS (BUILT 2026-10-20, see plan.md section 16)
 - [x] Probe OpenAlgo for RELIANCE and OFSS (expiries, lot size, strike step, candle counts, option bars); recorded in plan.md 16.3
-- [ ] Instrument table: add RELIANCE and OFSS with `underlying_exchange`, `min_underlying_bars` (360 for stocks), `kind`, monthly expiry; keep `index_symbol`/`index_exchange` aliases
-- [ ] Data loader: use per-instrument minimum bars and exchange (stock candles end at 15:14, so 360 bars, not 370)
-- [ ] Data loader/backfill: treat "symbol not found" strikes as `unlisted` (OFSS strikes are irregular: 50 near the money, 100 further out); manifest lists `unlisted` and `thin` strikes; per-instrument `min_option_coverage`
-- [ ] RELIANCE: backfill 30 days of the nearest monthly contract; review the manifest by hand
-- [ ] FakeClient: ATM = nearest cached strike (not `round(spot/step)*step`); chain from the manifest's strike list
-- [ ] Backtest runner sets `INDEX_EXCHANGE` as well as `UNDERLYING`; per-instrument overrides for `DAILY_MAX_LOSS` and point constants
-- [ ] Run one strategy (opening range breakout) on RELIANCE for one day; verify fills with `verify`
-- [ ] Regression: NIFTY -692.25 (2026-10-16) and BANKNIFTY -1330.50 unchanged
-- [ ] OFSS: add and backfill; check the thin/unlisted handling; treat all OFSS results as unreliable until a slippage model exists
-- [ ] Per-instrument slippage (points or % of premium) in the backtest; label stock results "no spread" until then
-- [ ] Run all strategies over the 30 days for both stocks; compare with NIFTY behaviour
-- [ ] Check the backfill window for corporate actions (splits/bonus)
-- [ ] Copy updated strategy/backtest files to the workspace `strategies/` folder (package assets only seed new workspaces)
+- [x] Instrument table: add RELIANCE and OFSS with `underlying_exchange`, `min_underlying_bars` (360 for stocks), `kind`, monthly expiry; keep `index_symbol`/`index_exchange` aliases
+- [x] Data loader: use per-instrument minimum bars and exchange (stock candles end at 15:14, so 360 bars, not 370)
+- [x] Data loader/backfill: treat "symbol not found" strikes as `unlisted` (OFSS strikes are irregular: 50 near the money, 100 further out); manifest lists `unlisted` and `thin` strikes; per-instrument `min_option_coverage`
+- [x] RELIANCE: backfill 30 days of the nearest monthly contract; review the manifest by hand
+- [x] FakeClient: ATM = nearest cached strike (not `round(spot/step)*step`); chain from the manifest's strike list
+- [x] Backtest runner sets `INDEX_EXCHANGE` as well as `UNDERLYING`; per-instrument overrides for `DAILY_MAX_LOSS` and point constants
+- [x] Run one strategy (opening range breakout) on RELIANCE for one day; verify fills with `verify`
+- [x] Regression: NIFTY -692.25 (2026-10-16) and BANKNIFTY -1330.50 unchanged
+- [x] OFSS: add and backfill; check the thin/unlisted handling; treat all OFSS results as unreliable until a slippage model exists
+- [x] Per-instrument slippage (points or % of premium) in the backtest; label stock results "no spread" until then
+- [x] Run all strategies over the 30 days for both stocks; compare with NIFTY behaviour
+- [x] Check the backfill window for corporate actions (splits/bonus)
+- [x] Copy updated strategy/backtest files to the workspace `strategies/` folder (package assets only seed new workspaces)
 - [ ] Later, if worthwhile: trade the stock itself (equity/futures executor and cost model)
+- Notes from the build (2026-10-20):
+  - RELIANCE backfill: 30 days (2026-09-04 .. 10-19), 26 complete, 13 nearest-expiry days (30 Sep .. 19 Oct); strikes every 10, 360 underlying bars, 375 per option.
+  - OFSS backfill: 19 days (contract listed 22 Sep), 22 unlisted symbols recorded (10150, 10350, 10650 ...); 9 usable nearest-expiry days, the others incomplete because near-the-money strikes traded in 3-55 % of the minutes.
+  - ORB on RELIANCE (13 days): gross +12450, net about +10753 after the 0.5 % spread estimate; all days script-checked; one trade hand-checked (ATM 1170 PE, fills = last completed bar close).
+  - ORB on OFSS (9 days): gross -7755, net about -16794 after the 1.5 % spread estimate; ATM fallback checked on 10-13 (spot 10539 -> 10550 unlisted -> 10500 used).
+  - No corporate action in the window (largest opening gap RELIANCE 0.9 %, OFSS 2.3 %).
+  - Index regressions unchanged (NIFTY -692.25, BANKNIFTY -1330.50); index CSV/summary format unchanged.
+  - Spread is an ESTIMATE (slippage_pct), booked in net_pnl only, so fill verification still works.
+- [x] Delete for results (per run, per group, in the run window; with or without the result folder; kept folders are not re-imported) and for job logs (per job, "clear finished")
+- [ ] Store net P&L in the runs table so the web app's stats can use it (today: gross; net is in each run's summary)
+- [ ] Replace the spread estimate with measured bid/ask (snapshots during market hours)
+  - All 13 strategies over both stocks: 286 day-runs, all script-checked, no errors. Best net: RELIANCE ORB +10753, nifty_direction_ce_pe +7187, MACD +3457 (13 days, LOW SAMPLE). OFSS: every strategy negative net after the 1.5 % spread estimate.
+- [ ] vwap_reclaim_scalp, stochastic_oscillator_crossover_scalp, s_9_21_ema_crossover_scalp: 0 trades on every instrument incl. NIFTY/BANKNIFTY; check their entry conditions

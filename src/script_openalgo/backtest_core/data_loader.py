@@ -34,6 +34,22 @@ CACHE_DIR = config.data_cache_dir()
 MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 
 
+NOT_FOUND = set()          # symbols OpenAlgo answered "not found" for (e.g. a strike that is not listed for a stock)
+
+
+def _not_found(code, msg):
+    return code == 400 and "not found" in str(msg or "").lower()
+
+
+def min_bars(instrument):
+    """Minimum 1m bars of the underlying for a usable day (stocks end at 15:14, indices at 15:29)."""
+    return instruments.get(instrument).get("min_underlying_bars", MIN_BARS_INDEX)
+
+
+def min_coverage(instrument):
+    return instruments.get(instrument).get("min_option_coverage", MIN_COVERAGE_OPTION)
+
+
 def _key():
     k = config.api_key()
     if not k:
@@ -61,6 +77,9 @@ def fetch_candles(symbol, exchange, day):
         if code == 200 and isinstance(b.get("data"), list):
             return clean(b["data"], day)
         last = (code, b.get("message"))
+        if _not_found(code, b.get("message")):
+            NOT_FOUND.add(symbol)
+            return pd.DataFrame()
         if code in (400, 404):      # symbol unknown / no data: retrying will not help
             break
         time.sleep(1 + attempt)
@@ -155,6 +174,9 @@ def fetch_candles_range(symbol, exchange, start_day, end_day):
             days = sorted({datetime.fromtimestamp(r["timestamp"], IST).date() for r in rows})
             return {d: clean(rows, d) for d in days}
         last = (code, b.get("message"))
+        if _not_found(code, b.get("message")):
+            NOT_FOUND.add(symbol)
+            return {}
         if code in (400, 404):
             break
         time.sleep(1 + attempt)
@@ -270,8 +292,8 @@ def ensure_data(day, instrument="NIFTY", force=False):
 
     idx, _ = _load_or_fetch(cfg["index_symbol"], cfg["index_symbol"], cfg["index_exchange"], day, force)
     series[cfg["index_symbol"]] = series_info(idx)
-    if len(idx) < MIN_BARS_INDEX:
-        issues.append(f"{instrument} index has only {len(idx)} bars (need >= {MIN_BARS_INDEX}); not a trading day or data missing")
+    if len(idx) < min_bars(instrument):
+        issues.append(f"{instrument} index has only {len(idx)} bars (need >= {min_bars(instrument)}); not a trading day or data missing")
         return _save(day, instrument, None, None, [], series, issues)
 
     daily = fetch_daily(instrument, day)
@@ -299,17 +321,31 @@ def ensure_data(day, instrument="NIFTY", force=False):
     strikes = candidate_strikes(instrument, float(idx["low"].min()), float(idx["high"].max()))
     print(f"[{instrument}] range {idx['low'].min():.0f}-{idx['high'].max():.0f} | expiry {expiry} | "
           f"{len(strikes)} strikes x CE/PE | lot {lot}")
+    unlisted, cov = [], min_coverage(instrument)
     for strike in strikes:
         for ot in ("CE", "PE"):
             sym = option_symbol(instrument, expiry, strike, ot)
             df, _ = _load_or_fetch(sym, sym, cfg["opt_exchange"], day, force)
+            if df.empty and sym in NOT_FOUND and instruments.is_stock(instrument):
+                # stock strikes are irregular: a strike OpenAlgo does not know is not listed, not missing data.
+                # (indices keep "no data": there "not found" usually means an expired contract)
+                unlisted.append(sym)
+                continue
             info = series_info(df)
             series[sym] = info
             if info["rows"] == 0:
                 issues.append(f"{sym}: no data")
-            elif info["coverage"] < MIN_COVERAGE_OPTION:
-                issues.append(f"{sym}: coverage {info['coverage']:.0%} below {MIN_COVERAGE_OPTION:.0%}")
-    return _save(day, instrument, expiry, lot, strikes, series, issues)
+            elif info["coverage"] < cov:
+                issues.append(f"{sym}: coverage {info['coverage']:.0%} below {cov:.0%}")
+    listed = listed_strikes(instrument, expiry, strikes, unlisted)
+    return _save(day, instrument, expiry, lot, listed, series, issues, extra={"unlisted": unlisted} if unlisted else None)
+
+
+def listed_strikes(instrument, expiry, strikes, unlisted):
+    """Strikes with at least one of CE/PE listed (a strike whose CE and PE are both unknown to OpenAlgo is dropped)."""
+    gone = set(unlisted)
+    return [k for k in strikes if not (option_symbol(instrument, expiry, k, "CE") in gone
+                                       and option_symbol(instrument, expiry, k, "PE") in gone)]
 
 
 def _save(day, instrument, expiry, lot, strikes, series, issues, warnings=None, extra=None):

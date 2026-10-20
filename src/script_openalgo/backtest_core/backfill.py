@@ -56,8 +56,12 @@ def backfill(instrument, expiry=None, max_days=None, force=False):
     last_complete = today if (datetime.now().hour >= 16 and today in {d.date() for d in daily.index}) else today - timedelta(days=1)
     spot = float(daily["close"].iloc[-1])
     atm = int(round(spot / cfg["strike_step"]) * cfg["strike_step"])
-    probe = dl.option_symbol(instrument, expiry, atm, "CE")
-    since = _listed_since(probe, cfg["opt_exchange"], today)
+    since = None
+    for k in (0, 1, -1, 2, -2):                            # the exact ATM strike may not be listed (irregular stock strikes)
+        probe = dl.option_symbol(instrument, expiry, atm + k * cfg["strike_step"], "CE")
+        since = _listed_since(probe, cfg["opt_exchange"], today)
+        if since:
+            break
     if since is None:
         raise SystemExit(f"no history for {probe}: is the contract listed and the broker connected?")
     days = [d.date() for d in daily.index if since <= d.date() <= last_complete and d.date() <= expiry]
@@ -102,21 +106,26 @@ def backfill(instrument, expiry=None, max_days=None, force=False):
                        expiry_date=dl.fmt_expiry(expiry), offset="ATM", option_type="CE")
     lot = int(b["lotsize"]) if code == 200 and b.get("lotsize") else None
     summary = []
+    stock, cov = instruments.is_stock(instrument), dl.min_coverage(instrument)
     for d in days:
         allk, core = per_day[d]
         series, issues, warnings = {}, [], []
         idx = dl.load_series(cfg["index_symbol"], d)
         idx = idx if idx is not None else pd.DataFrame()
         series[cfg["index_symbol"]] = dl.series_info(idx)
-        if len(idx) < dl.MIN_BARS_INDEX:
-            issues.append(f"{instrument} index has only {len(idx)} bars (need >= {dl.MIN_BARS_INDEX})")
+        if len(idx) < dl.min_bars(instrument):
+            issues.append(f"{instrument} index has only {len(idx)} bars (need >= {dl.min_bars(instrument)})")
+        unlisted = []
         for k in allk:
             for ot in ("CE", "PE"):
                 sym = dl.option_symbol(instrument, expiry, k, ot)
                 df = dl.load_series(sym, d)
+                if df is None and sym in dl.NOT_FOUND and stock:
+                    unlisted.append(sym)                 # irregular stock strike: not listed, not missing data
+                    continue
                 info = dl.series_info(df if df is not None else pd.DataFrame())
                 series[sym] = info
-                bad = info["rows"] == 0 or info["coverage"] < dl.MIN_COVERAGE_OPTION
+                bad = info["rows"] == 0 or info["coverage"] < cov
                 if bad:
                     msg = f"{sym}: " + ("no data" if info["rows"] == 0 else f"coverage {info['coverage']:.0%}")
                     (issues if k in core else warnings).append(msg + ("" if k in core else " (outer buffer strike)"))
@@ -124,8 +133,11 @@ def backfill(instrument, expiry=None, max_days=None, force=False):
         series["DAILY"] = {"rows": len(prior), "last_before_day": prior.index[-1].date().isoformat() if len(prior) else None}
         if prior.empty:
             issues.append("no daily bar before this date")
-        m = dl._save(d, instrument, expiry, lot, allk, series, issues, warnings,
-                     extra={"backfilled": True, "lot_size_note": "current lot size (history of lot changes not available)"})
+        extra = {"backfilled": True, "lot_size_note": "current lot size (history of lot changes not available)"}
+        if unlisted:
+            extra["unlisted"] = unlisted
+        m = dl._save(d, instrument, expiry, lot, dl.listed_strikes(instrument, expiry, allk, unlisted), series, issues, warnings,
+                     extra=extra)
         summary.append((d, m["complete"], m["nearest"], m["days_to_expiry"], len(issues), len(warnings)))
     print(f"\n[{instrument}] day / complete / nearest expiry / days to expiry / issues / warnings")
     for r in summary:
@@ -135,7 +147,7 @@ def backfill(instrument, expiry=None, max_days=None, force=False):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--instrument", default="NIFTY", help="NIFTY, BANKNIFTY or ALL")
+    ap.add_argument("--instrument", default="NIFTY", help="NIFTY, BANKNIFTY, a stock (RELIANCE, OFSS) or ALL")
     ap.add_argument("--expiry", help="DDMMMYY, default = nearest listed expiry")
     ap.add_argument("--days", type=int, help="only the last N trading days")
     ap.add_argument("--force", action="store_true")

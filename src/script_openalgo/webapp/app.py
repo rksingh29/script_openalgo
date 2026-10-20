@@ -159,6 +159,59 @@ def run_delete(rid):
     return jsonify({"deleted": ok})
 
 
+@app.post("/api/runs/delete")
+def runs_delete_many():
+    b = request.json or {}
+    ids = [int(i) for i in (b.get("ids") or []) if str(i).isdigit()][:5000]
+    con = conn()
+    n = sum(bool(db.delete_run(con, rid, delete_dir=bool(b.get("delete_files")))) for rid in ids)
+    con.close()
+    return jsonify({"deleted": n})
+
+
+def _delete_job(con, j):
+    """Remove a finished job row and its log files (only files inside the workspace's log folder)."""
+    lp = j["log_path"]
+    if lp and os.path.commonpath([os.path.abspath(lp), os.path.abspath(jobs.LOG_DIR)]) == os.path.abspath(jobs.LOG_DIR):
+        for p in (lp, lp[:-4] + ".exit" if lp.endswith(".log") else None):
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+    con.execute("DELETE FROM jobs WHERE id=?", (j["id"],))
+
+
+FINISHED = ("ok", "failed", "cancelled", "interrupted")      # needs_input / limit / running jobs are still in use
+
+
+@app.post("/api/jobs/<int:jid>/delete")
+def job_delete(jid):
+    con = conn()
+    j = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone()
+    if not j:
+        con.close()
+        return err("not found", 404)
+    if j["status"] not in FINISHED:
+        con.close()
+        return err(f"job is {j['status']}; stop it (or answer it) first", 409)
+    _delete_job(con, j)
+    con.commit()
+    con.close()
+    return jsonify({"deleted": 1})
+
+
+@app.post("/api/jobs/clear")
+def jobs_clear():
+    con = conn()
+    rows = con.execute(f"SELECT * FROM jobs WHERE status IN ({','.join('?' * len(FINISHED))})", FINISHED).fetchall()
+    for j in rows:
+        _delete_job(con, j)
+    con.commit()
+    con.close()
+    return jsonify({"deleted": len(rows)})
+
+
 # ---------------- actions ----------------
 @app.post("/api/research")
 def research():
@@ -337,7 +390,7 @@ def data_list():
         out.append({"instrument": m.get("instrument", "NIFTY"), "date": m["date"], "expiry": m.get("expiry"),
                     "series": len(m.get("series", {})), "complete": m.get("complete"), "issues": m.get("issues", [])[:3],
                     "warnings": m.get("warnings", [])[:3], "dte": m.get("days_to_expiry"), "nearest": m.get("nearest", True),
-                    "backfilled": bool(m.get("backfilled")),
+                    "backfilled": bool(m.get("backfilled")), "unlisted": len(m.get("unlisted", [])),
                     "size_kb": round(size / 1024)})
     return jsonify({"cache_dir": cache_dir(), "items": out})
 

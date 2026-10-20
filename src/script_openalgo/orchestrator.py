@@ -255,7 +255,8 @@ def phase_data(st, a):
     m = dl.load_manifest(day, a.instrument)
     if not (m and m.get("complete")):
         m = dl.ensure_data(day, a.instrument)
-    index_ok = m["series"].get("NIFTY", {}).get("rows", 0) >= dl.MIN_BARS_INDEX
+    cfg = dl.instruments.get(a.instrument)
+    index_ok = m["series"].get(cfg["index_symbol"], {}).get("rows", 0) >= dl.min_bars(a.instrument)
     if not m["complete"] and not a.no_agents and index_ok:
         res = agent_with_input(st, "data-downloader", f"Target date: {day}. Manifest issues: {m['issues'][:10]}")
         m = dl.load_manifest(day, a.instrument)
@@ -380,7 +381,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--strategy", required=True, help="strategy module name, e.g. nifty_direction_ce_pe")
     ap.add_argument("--date")
-    ap.add_argument("--instrument", default="NIFTY", help="NIFTY or BANKNIFTY")
+    ap.add_argument("--instrument", default="NIFTY", help="NIFTY, BANKNIFTY or a stock from backtest_core/instruments.py")
     ap.add_argument("--spec", help="file with a plain-English strategy spec (only if the strategy file is missing)")
     ap.add_argument("--answer", help="answer to the pending NEEDS_INPUT question")
     ap.add_argument("--restart", action="store_true", help="ignore saved state")

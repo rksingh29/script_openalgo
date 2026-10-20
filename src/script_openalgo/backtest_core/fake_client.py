@@ -166,7 +166,7 @@ class FakeClient:
         if spot is None:
             return None
         step = self.cfg["strike_step"]
-        atm = int(round(spot / step) * step)
+        atm = self._atm(spot)
         cutoff = now - timedelta(minutes=1)
 
         def leg(strike, ot):
@@ -191,6 +191,17 @@ class FakeClient:
                 "atm_strike": float(atm), "chain": rows, "source": "cached_bars", "partial": True,
                 "strikes_covered": [min(self.manifest["strikes"]), max(self.manifest["strikes"])]}
 
+    def _atm(self, spot, option_type="CE"):
+        """ATM strike: spot rounded to the strike step (as before for indices). If that strike is not in the cache (irregular
+        stock strikes, e.g. OFSS lists 10200/10250 but not 10150), the nearest cached strike for this option type."""
+        step = self.cfg["strike_step"]
+        strike = int(round(spot / step) * step)
+        if self._df(dl.option_symbol(self.instrument, self.expiry_date, strike, option_type)) is not None:
+            return strike
+        have = [int(k) for k in self.manifest.get("strikes", [])
+                if self._df(dl.option_symbol(self.instrument, self.expiry_date, k, option_type)) is not None]
+        return min(have, key=lambda k: (abs(k - spot), k)) if have else strike
+
     def expiry(self, symbol, exchange, instrumenttype):
         e = self.expiry_date
         return {"status": "success", "data": [f"{e.day:02d}-{dl.MONTHS[e.month - 1]}-{e.year % 100:02d}"]}
@@ -203,8 +214,7 @@ class FakeClient:
             return {"status": "error", "message": f"no {underlying} price yet"}
         if offset != "ATM":
             return {"status": "error", "message": f"offset {offset} not supported by FakeClient"}
-        step = self.cfg["strike_step"]
-        strike = int(round(spot / step) * step)
+        strike = self._atm(spot, option_type)
         sym = dl.option_symbol(self.instrument, self.expiry_date, strike, option_type)
         if self._df(sym) is None:
             return {"status": "error", "message": f"{sym} not in data cache (strike outside fetched range)"}
@@ -217,8 +227,10 @@ class FakeClient:
             return {"status": "error", "message": f"no price for {symbol}"}
         px += self.slippage if action == "BUY" else -self.slippage
         oid = f"SIM{len(self.orders) + 1:05d}"
+        cost = px * int(quantity) * self.cfg.get("slippage_pct", 0) / 100      # estimated spread, booked in net P&L only
         self.orders.append({"id": oid, "time": self.clock.now(), "cycle": getattr(self.strategy, "cycle", 0),
-                            "symbol": symbol, "action": action, "qty": int(quantity), "price": round(px, 2)})
+                            "symbol": symbol, "action": action, "qty": int(quantity), "price": round(px, 2),
+                            "cost": round(cost, 2)})
         return {"status": "success", "orderid": oid}
 
     def orderstatus(self, order_id, strategy):

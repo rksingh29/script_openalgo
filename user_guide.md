@@ -328,3 +328,29 @@ Python 3.11 or newer. Use a **stable** Python (a beta such as 3.15 crashed panda
 - **Import** first checks every checksum and refuses a damaged, modified or unsafe zip before changing anything. It then makes an automatic **safety backup of the current state**, replaces the databases with the ones from the zip, and copies the other files. A file that already exists with different content is **kept** and listed as a conflict, unless you tick *overwrite*. Use **check only** first. Your local `script_openalgo.toml` (the host of that machine) is never overwritten.
 - Tested: a full export of this workspace imported into an empty folder gave identical files (1,764 of 1,764 by checksum) and identical database rows; importing twice changes nothing; a tampered zip is refused.
 - Not supported: merging two *different* databases. Import replaces the database; the safety backup keeps the old one.
+
+## 15. Stocks and stock options (RELIANCE, OFSS)
+
+The strategies can now run on stocks as well as NIFTY and BANKNIFTY. The signal comes from the stock's own 5-minute candles and the trade is an ATM option on that stock (CE for long, PE for short), exactly as for the indices.
+
+**Getting data.** In the Data tab choose RELIANCE or OFSS and click "Backfill all days of the nearest contract". Stock options expire monthly, so a backfill covers several weeks. Only days on which the cached contract was the nearest expiry are used by the multi-day runner; the others are labelled "far expiry".
+
+**Running.** Pick RELIANCE or OFSS in the instrument box of a strategy and click Run (one day) or Run range (many days). From PowerShell:
+
+```
+script-openalgo backfill --instrument RELIANCE --days 30
+script-openalgo multiday --strategy opening_range_breakout_orb --instrument RELIANCE
+```
+
+**What is different for stocks**
+- Stock candles stop at 15:14 (360 a day). That is normal; the strategies square off at 15:15.
+- Some strikes do not exist (OFSS has 10200 and 10250 but not 10150). The Data tab shows them as "unlisted"; they are not missing data. The backtest buys the nearest strike that exists.
+- OFSS options are thin: many minutes have no trade. Days where a near-the-money strike traded in less than 60 % of the minutes are marked incomplete and skipped.
+- The backtest books an ESTIMATED spread cost per fill (RELIANCE 0.5 %, OFSS 1.5 % of the premium). The summary shows `net_pnl` and `spread_cost`; the multi-day report prints a NET line. Read the net number for stocks; it is still an estimate, not real quotes.
+- Rupee limits are resized per stock where needed (OFSS daily loss cap 6000). The values are in `backtest_core/instruments.py` (`strategy_overrides`).
+- For LIVE trading on a stock, set `UNDERLYING = "RELIANCE"` and `INDEX_EXCHANGE = "NSE"` in the strategy file. Live strike lookup only works while the market is open.
+
+## 16. Deleting results and logs
+
+- **Results tab**: each run has a × button, each date/strategy group has "Delete N run(s)", and the run window has "Delete run". You are asked whether to delete the result folder on disk as well. If you keep the files, the run is remembered as deleted and does not come back when the app syncs the results folder.
+- **Jobs tab**: "Delete" on a finished job removes the job and its log file. "Clear finished jobs and logs" removes every finished job (ok, failed, cancelled, interrupted). Running jobs, jobs waiting for your answer and jobs held by the Claude limit are kept.

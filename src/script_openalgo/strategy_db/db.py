@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS tombstones(signature TEXT PRIMARY KEY, slug TEXT, nam
 CREATE TABLE IF NOT EXISTS research_log(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, job_id INTEGER, action TEXT, strategy_id INTEGER, detail TEXT);
 CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS ignored_results(path TEXT PRIMARY KEY, deleted_at TEXT);
 CREATE TABLE IF NOT EXISTS claude_calls(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, source TEXT, agent TEXT, strategy TEXT, job_id INTEGER,
   status TEXT, weight INTEGER DEFAULT 1, duration_ms INTEGER, cost_usd REAL, input_tokens INTEGER, output_tokens INTEGER,
@@ -398,6 +399,9 @@ def delete_run(con, run_id, delete_dir=False):
             and os.path.abspath(d) != RESULTS_DIR:
         import shutil
         shutil.rmtree(d, ignore_errors=True)
+    elif d:                                       # files kept: remember, so the disk sync does not import the run again
+        con.execute("INSERT OR REPLACE INTO ignored_results(path, deleted_at) VALUES(?,?)",
+                    (os.path.normcase(os.path.abspath(d)), now()))
     con.execute("DELETE FROM runs WHERE id=?", (run_id,))
     con.commit()
     return True
@@ -465,7 +469,13 @@ def register_user_strategy(con, slug, name, family="user", notes=""):
 
 
 # ---------------- sync: strategy files and result folders on disk -> database ----------------
-RESULT_DIR_RE = re.compile(r"^(?P<slug>.+?)_(?P<inst>NIFTY|BANKNIFTY)_(?P<day>\d{4}-\d{2}-\d{2})_(?P<t>\d{6})$")
+def _result_dir_re():
+    from script_openalgo.backtest_core import instruments
+    names = "|".join(sorted((re.escape(n) for n in instruments.INSTRUMENTS), key=len, reverse=True))
+    return re.compile(r"^(?P<slug>.+?)_(?P<inst>" + names + r")_(?P<day>\d{4}-\d{2}-\d{2})_(?P<t>\d{6})$")
+
+
+RESULT_DIR_RE = _result_dir_re()
 LEGACY_DIR_RE = re.compile(r"^(?P<slug>.+?)_(?P<day>\d{4}-\d{2}-\d{2})_(?P<t>\d{6})$")       # early runs had no instrument in the name
 
 
@@ -532,6 +542,7 @@ def sync_from_disk(con, cache_dir=None):
     con.commit()
     ids = {r["slug"]: r["id"] for r in con.execute("SELECT id, slug FROM strategies").fetchall()}
     known = {os.path.normcase(os.path.abspath(r["result_dir"])) for r in con.execute("SELECT result_dir FROM runs WHERE result_dir IS NOT NULL")}
+    known |= {r["path"] for r in con.execute("SELECT path FROM ignored_results")}           # runs the user deleted
 
     # newest result folder per (slug, instrument, day)
     best = {}

@@ -17,7 +17,7 @@ def build_trades(orders, charges_per_order=0.0):
         key = (o["cycle"], o["symbol"])
         if o["action"] == "BUY":
             open_legs[key].append({"entry_time": o["time"], "entry_price": o["price"],
-                                   "qty": o["qty"], "remaining": o["qty"],
+                                   "qty": o["qty"], "remaining": o["qty"], "cost": o.get("cost", 0.0),
                                    "exit_notional": 0.0, "exit_qty": 0, "exit_time": None})
         else:
             qty_left = o["qty"]
@@ -28,6 +28,7 @@ def build_trades(orders, charges_per_order=0.0):
                 leg["exit_qty"] += take
                 leg["exit_notional"] += take * o["price"]
                 leg["exit_time"] = o["time"]
+                leg["cost"] += o.get("cost", 0.0) * take / o["qty"] if o["qty"] else 0.0
                 qty_left -= take
                 if leg["remaining"] == 0:
                     open_legs[key].pop(0)
@@ -39,7 +40,8 @@ def build_trades(orders, charges_per_order=0.0):
                                    "exit_time": leg["exit_time"].strftime("%H:%M:%S"),
                                    "exit_price": round(avg_exit, 2),
                                    "gross_pnl": round(gross, 2),
-                                   "net_pnl": round(gross - 2 * charges_per_order, 2)})
+                                   "net_pnl": round(gross - 2 * charges_per_order - leg["cost"], 2),
+                                   **({"spread_cost": round(leg["cost"], 2)} if leg["cost"] else {})})
             # a leftover qty_left here (SELL bigger than any open BUY) would mean an order bug
             # upstream; nothing sensible to pair it with, so it is silently dropped like before.
     unclosed = [(k, leg) for k, legs in open_legs.items() for leg in legs]
@@ -75,6 +77,7 @@ def summarize(trades, orders, log_lines, unclosed):
         "reversals": sum(max(0, n - 1) for n in buys_per_cycle.values()),
         "gross_pnl": round(sum(pnls), 2),
         "net_pnl": round(sum(t["net_pnl"] for t in trades), 2),
+        **({"spread_cost": round(sum(t.get("spread_cost", 0) for t in trades), 2)} if any(t.get("spread_cost") for t in trades) else {}),
         "win_rate": round(len(wins) / len(pnls), 3) if pnls else None,
         "avg_win": round(sum(wins) / len(wins), 2) if wins else None,
         "avg_loss": round(sum(losses) / len(losses), 2) if losses else None,
@@ -89,7 +92,7 @@ def write_results(out_dir, day, trades, summary, log_lines):
     os.makedirs(out_dir, exist_ok=True)
     if trades:
         with open(os.path.join(out_dir, "trades.csv"), "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=list(trades[0].keys()))
+            w = csv.DictWriter(f, fieldnames=list(dict.fromkeys(k for t in trades for k in t)), restval="")
             w.writeheader()
             w.writerows(trades)
     with open(os.path.join(out_dir, "summary.json"), "w") as f:

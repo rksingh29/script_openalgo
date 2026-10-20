@@ -375,7 +375,7 @@ Run: `script-openalgo webapp` then open http://127.0.0.1:5055 (port overridable 
 - Tags: free text, normalised (lower-case, a-z 0-9 - _), max 20 per strategy; suggested market-view tags bullish / bearish / neutral / both-sides / hedge.
 - Tested through the API (tags, rules, rename, copy incl. file copy, syntax-error block, versions, restore, warnings, delete) and the stats rule on a scratch DB. The browser page itself was only syntax-checked.
 
-## 16. Stocks and stock options (PLAN, 2026-10-20; first stocks: RELIANCE and OFSS)
+## 16. Stocks and stock options (BUILT 2026-10-20; first stocks: RELIANCE and OFSS)
 
 ### 16.1 Goal and scope
 Run the same strategies (signal on the underlying's 5m candles, trade an ATM CE/PE bought on the signal) on stocks, not only on NIFTY and BANKNIFTY. First two stocks: **RELIANCE** and **OFSS**. Trading the stock itself (cash/futures) is NOT in this phase (see 16.8).
@@ -448,3 +448,12 @@ Findings that change the design:
 
 ### 16.8 Not in this phase
 Trading the stock itself (equity MIS or futures): needs a second executor, a quantity rule and a cost model; revisit after step 5 if the signals look worth it.
+
+### 16.9 Build result (2026-10-20)
+Built as planned, with these choices:
+- Kept the `index_symbol` / `index_exchange` keys (they now mean "underlying"); added `kind`, `min_underlying_bars`, `min_option_coverage`, `slippage_pct`, `strategy_overrides` to the instrument table.
+- "Not found" strikes are `unlisted` for stocks only; for indices "not found" usually means an expired contract and stays an issue.
+- FakeClient keeps `round(spot/step)*step` and falls back to the nearest cached strike only when that strike is not cached, so index results are unchanged.
+- Spread is booked as an estimated cost in `net_pnl` (and `spread_cost`), not in the fill price, so `verify.py` can still re-derive fills from the candles.
+- Backtest files call `instruments.apply_strategy_overrides(...)` (with a fallback for an older installed package).
+- Results in task.md Phase 15 notes. Delete for results and job logs added to the web app at the same time.
