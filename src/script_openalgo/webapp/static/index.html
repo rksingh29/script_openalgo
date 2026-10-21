@@ -91,6 +91,29 @@ async function api(path, body) {
   if (!r.ok) throw new Error(j.error || r.statusText);
   return j;
 }
+function findDuplicates(runs) {
+  // Older runs of the same strategy, instrument, day, executor and options as a newer run. "same": identical result
+  // (trades and gross P&L) to the newest one, so nothing is lost. "changed": a different result (usually older code).
+  const groups = {};
+  runs.forEach(r => { const k = [r.strategy_id, r.instrument, r.day, r.executor || "option", r.params || ""].join("|"); (groups[k] = groups[k] || []).push(r); });
+  const same = [], changed = [];
+  Object.values(groups).forEach(g => {
+    if (g.length < 2) return;
+    g.sort((a, b) => b.id - a.id);
+    const newest = g[0];
+    g.slice(1).forEach(r => (r.trades === newest.trades && Math.abs((r.gross_pnl || 0) - (newest.gross_pnl || 0)) < 0.01 ? same : changed).push(r.id));
+  });
+  return { same, changed };
+}
+function dupButtons(runs, done) {
+  const dup = findDuplicates(runs);
+  if (!dup.same.length && !dup.changed.length) return h("span", { class: "mute small" }, "no duplicate runs");
+  return h("span", { class: "row small", style: "gap:4px" },
+    dup.same.length ? h("button", { class: "danger small", title: "Older runs of the same day with exactly the same result as the newest run. Stats already use only the newest run, so nothing changes in the numbers.",
+      onclick: () => done(() => deleteRuns(dup.same)) }, `Remove ${dup.same.length} duplicate${dup.same.length > 1 ? "s" : ""}`) : null,
+    dup.changed.length ? h("button", { class: "small", title: "Older runs of the same day whose result differs from the newest run (usually an earlier version of the code). Kept unless you remove them here.",
+      onclick: () => done(() => deleteRuns(dup.changed)) }, `Remove ${dup.changed.length} superseded older run${dup.changed.length > 1 ? "s" : ""}`) : null);
+}
 async function deleteRuns(ids) {     // true if deleted
   if (!ids.length || !confirm(`Delete ${ids.length} run(s) from the results?`)) return false;
   const files = confirm(["Also delete the result folders on disk (trades, summary, log)?", "", "OK = delete the files too",
@@ -292,7 +315,7 @@ function resultsView() {
           h("td", {}, r.win_rate == null ? "–" : Math.round(r.win_rate * 100) + "%"), h("td", {}, r.verdict || "", runOpts(r) ? h("div", { class: "chip small", title: "run with options; not counted in the stats" }, paramsText(runOpts(r))) : null),
           h("td", {}, h("button", { class: "danger small", title: "Delete this run", onclick: (e) => { e.stopPropagation(); act(() => deleteRuns([r.id])); } }, "×")))))));
   });
-  return h("div", {}, mode, h("div", { class: "mute small", style: "margin-bottom:8px" }, "P&L is gross, without slippage or charges. Few days = low sample; do not read a ranking into it."), cards.length ? cards : h("div", { class: "card mute" }, "No results yet."));
+  return h("div", {}, h("div", { class: "row" }, mode, h("span", { style: "flex:1" }), dupButtons(runs, act)), h("div", { class: "mute small", style: "margin-bottom:8px" }, "P&L is gross, without slippage or charges. Few days = low sample; do not read a ranking into it."), cards.length ? cards : h("div", { class: "card mute" }, "No results yet."));
 }
 
 // ---------- strategy options chosen per run (module constants of the strategy) ----------
@@ -826,7 +849,8 @@ function runsTab(d) {
     sel("version", "any version", [["current", "current"], ["old", "old version"], ["options", "run with options"]]),
     h("button", { class: "small", onclick: () => { st.page.rf = {}; renderPage(); } }, "Clear"),
     h("span", { class: "mute" }, `${rows.length} of ${d.runs.length} runs · P&L `), money(total),
-    rows.length && rows.length < d.runs.length ? h("button", { class: "danger small", onclick: () => pact(() => deleteRuns(rows.map(r => r.id))) }, `Delete ${rows.length} shown`) : null);
+    rows.length && rows.length < d.runs.length ? h("button", { class: "danger small", onclick: () => pact(() => deleteRuns(rows.map(r => r.id))) }, `Delete ${rows.length} shown`) : null,
+    h("span", { style: "flex:1" }), dupButtons(d.runs.map(r => ({ ...r, strategy_id: d.id })), pact));
   return h("div", { class: "card" }, filters, h("table", {}, h("thead", {}, h("tr", {}, ["Date", "Instrument", "Trades", "P&L", "Win rate", "Review", "Expiry", "Version", ""].map(t => h("th", {}, t)))),
     h("tbody", {}, rows.length ? rows.map(r => h("tr", { class: "click", onclick: () => openRun(r.id) }, h("td", {}, r.day), h("td", {}, r.instrument), h("td", {}, r.trades), h("td", {}, money(r.gross_pnl)),
       h("td", {}, r.win_rate == null ? "–" : Math.round(r.win_rate * 100) + "%"), h("td", {}, r.verdict || ""),

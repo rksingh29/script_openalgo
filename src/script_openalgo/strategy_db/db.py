@@ -320,6 +320,8 @@ def add_run(con, sid, instrument, day, summary, verdict, result_dir, job_id=None
     """`params`: strategy options chosen for this run (None/{} = the strategy's defaults). Runs with options are kept
     out of the strategy's headline stats so variants do not mix with the default results."""
     params = params if params is not None else summary.get("params")
+    if result_dir and con.execute("SELECT 1 FROM runs WHERE result_dir=?", (result_dir,)).fetchone():
+        return                                     # already recorded (a multi-day job and its own disk sync both report it)
     con.execute("INSERT INTO runs(strategy_id,instrument,day,executor,trades,gross_pnl,win_rate,max_dd,verdict,"
                 "result_dir,job_id,created,code_hash,dte,nearest,params) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (sid, instrument, day, executor, summary.get("trades"), summary.get("gross_pnl"),

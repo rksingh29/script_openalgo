@@ -408,3 +408,12 @@ In the Signals tab, tick **more than one strategy** (up to 8) and click **Start 
 - The table above the chart lists each strategy: options, status, signals, paper P&L of closed signals, open position. The **Indicators** radio chooses whose indicator lines and log are shown (all at once would be unreadable).
 - The signal table has a Strategy column; **Act** works per signal in live runs, as for a single strategy.
 - Up to 12 sessions can run at once in total (a run of 3 strategies uses 3).
+
+## 20. Duplicate runs
+
+Running the same day again adds a new run; the strategy's numbers always use only the newest run of each day, so duplicates do not change the stats, but they clutter the lists.
+
+- **Remove N duplicates** (strategy page, Runs tab; and the Results tab for all strategies): older runs of the same strategy, instrument, day and options whose trades and P&L are exactly the same as the newest run. Safe to remove.
+- **Remove N superseded older runs**: older runs of the same day whose result differs (usually made with an earlier version of the code). They are kept unless you remove them here.
+
+Both ask, like every delete, whether to remove the result folders on disk too.
