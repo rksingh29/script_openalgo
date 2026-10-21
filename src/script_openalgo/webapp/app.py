@@ -389,7 +389,8 @@ def signals_clear():
 
 
 # ---------------- signals: run a strategy live or as a replay; its orders become signals; "act" sends one ----------------
-MAX_SIGNAL_SESSIONS = 3
+MAX_SIGNAL_SESSIONS = 12     # running sessions at once (a group of strategies uses one each)
+MAX_GROUP = 8                # strategies in one multi-strategy run
 
 
 def _signal_job(jid):
@@ -448,70 +449,191 @@ def signals_live_orders():
 def signals_sessions():
     con = conn()
     rows = db.rows(con, "SELECT j.id, j.status, j.label, j.started, j.ended, j.meta, s.name FROM jobs j "
-                        "LEFT JOIN strategies s ON s.id=j.strategy_id WHERE j.kind='signal' ORDER BY j.id DESC LIMIT 20")
+                        "LEFT JOIN strategies s ON s.id=j.strategy_id WHERE j.kind='signal' ORDER BY j.id DESC LIMIT 60")
     con.close()
     for r in rows:
         m = json.loads(r.pop("meta") or "{}")
-        r.update({k: m.get(k) for k in ("mode", "instrument", "date", "start", "speed", "slug", "params")})
+        r.update({k: m.get(k) for k in ("mode", "instrument", "date", "start", "speed", "slug", "params", "group")})
         r["acted"] = len(m.get("acted", {}))
     return jsonify({"items": rows})
 
 
-@app.post("/api/signals/start")
-def signals_start():
+class SignalStartError(Exception):
+    def __init__(self, msg, code=400):
+        super().__init__(msg)
+        self.code = code
+
+
+def _signal_common(b):
+    """Instrument / mode / replay day settings shared by every session of a start request (validated once)."""
     from datetime import date as _date
     from script_openalgo.backtest_core import data_loader as dl
-    b = request.json or {}
-    try:
-        sid = int(b.get("strategy_id"))
-    except (TypeError, ValueError):
-        return err("choose a strategy")
     inst = (b.get("instrument") or "NIFTY").upper()
     if inst not in instruments.INSTRUMENTS:
-        return err("unknown instrument")
+        raise SignalStartError("unknown instrument")
     mode = "replay" if b.get("mode") == "replay" else "live"
+    common = {"inst": inst, "mode": mode}
+    if mode == "replay":
+        day, start = (b.get("date") or "").strip(), (b.get("time") or "").strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            raise SignalStartError("choose the replay date")
+        if start and not re.fullmatch(r"\d{2}:\d{2}", start):
+            raise SignalStartError("time must be HH:MM")
+        try:
+            speed = float(b.get("speed") or 30)
+        except ValueError:
+            raise SignalStartError("bad speed")
+        mf = dl.load_manifest(_date.fromisoformat(day), inst)
+        if not (mf and mf.get("complete")):
+            raise SignalStartError(f"no complete cached data for {inst} on {day}: fetch or backfill it in the Data tab first")
+        common.update({"day": day, "start": start, "speed": speed})
+    elif not jobs.key_present():
+        raise SignalStartError("OPENALGO_API_KEY not found (environment or .env)")
+    return common
+
+
+def _signal_strategy(sid, params_text):
     con = conn()
     s = con.execute("SELECT id, slug, name FROM strategies WHERE id=?", (sid,)).fetchone()
-    n_run = con.execute("SELECT COUNT(*) FROM jobs WHERE kind='signal' AND status='running'").fetchone()[0]
     con.close()
     if not s or not os.path.exists(os.path.join(db.STRATEGIES_DIR, s["slug"] + ".py")):
-        return err("strategy not found or its code file is missing")
-    if n_run >= MAX_SIGNAL_SESSIONS:
-        return err(f"{n_run} signal sessions are running; stop one first", 409)
+        raise SignalStartError(f"strategy {sid} not found or its code file is missing")
     try:
-        params = parse_run_params(s["slug"], b.get("params") or "")
+        params = parse_run_params(s["slug"], params_text or "")
     except ValueError as e:
-        return err(f"options: {e}")
+        raise SignalStartError(f"options of {s['name']}: {e}")
+    return s, params
+
+
+def _launch_signal(s, params, common, group=None):
+    inst, mode = common["inst"], common["mode"]
     events = os.path.join(jobs.LOG_DIR, ws(), "signals_{JOB_ID}.jsonl")
     cmd = [sys.executable, "-u", "-m", "script_openalgo.signals", "--strategy", s["slug"], "--instrument", inst, "--events", events]
     if params:
         cmd += ["--set", ", ".join(f"{k}={v}" for k, v in params.items())]
     meta = {"mode": mode, "instrument": inst, "slug": s["slug"], "params": params}
+    if group:
+        meta["group"] = group
     if mode == "replay":
-        day, start = (b.get("date") or "").strip(), (b.get("time") or "").strip()
-        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
-            return err("choose the replay date")
-        if start and not re.fullmatch(r"\d{2}:\d{2}", start):
-            return err("time must be HH:MM")
-        try:
-            speed = float(b.get("speed") or 30)
-        except ValueError:
-            return err("bad speed")
-        mf = dl.load_manifest(_date.fromisoformat(day), inst)
-        if not (mf and mf.get("complete")):
-            return err(f"no complete cached data for {inst} on {day}: fetch or backfill it in the Data tab first")
-        cmd += ["--date", day, "--speed", str(speed)] + (["--from", start] if start else [])
-        meta.update({"date": day, "start": start, "speed": speed})
-    elif not jobs.key_present():
-        return err("OPENALGO_API_KEY not found (environment or .env)")
+        cmd += ["--date", common["day"], "--speed", str(common["speed"])] + (["--from", common["start"]] if common["start"] else [])
+        meta.update({"date": common["day"], "start": common["start"], "speed": common["speed"]})
     label = f"signals {s['slug']} {inst} " + (f"replay {meta['date']} from {meta['start'] or 'open'} x{meta['speed']:g}"
-                                              if mode == "replay" else "LIVE") + (f" [{', '.join(f'{k}={v}' for k, v in params.items())}]" if params else "")
-    jid = jobs._launch(ws(), "signal", sid, label, cmd, meta=meta)
+                                              if mode == "replay" else "LIVE") + \
+        (f" [{', '.join(f'{k}={v}' for k, v in params.items())}]" if params else "") + (f" (group {group})" if group else "")
+    jid = jobs._launch(ws(), "signal", s["id"], label, cmd, meta=meta)
     con = conn()                                                # store the real events path now that the job id is known
     con.execute("UPDATE jobs SET meta=? WHERE id=?", (json.dumps(dict(meta, events=events.replace("{JOB_ID}", str(jid)))), jid))
     con.commit()
     con.close()
-    return jsonify({"job_id": jid})
+    return jid
+
+
+def _running_signals():
+    con = conn()
+    n = con.execute("SELECT COUNT(*) FROM jobs WHERE kind='signal' AND status='running'").fetchone()[0]
+    con.close()
+    return n
+
+
+@app.post("/api/signals/start")
+def signals_start():
+    b = request.json or {}
+    try:
+        sid = int(b.get("strategy_id"))
+    except (TypeError, ValueError):
+        return err("choose a strategy")
+    try:
+        common = _signal_common(b)
+        s, params = _signal_strategy(sid, b.get("params"))
+        if _running_signals() >= MAX_SIGNAL_SESSIONS:
+            raise SignalStartError(f"{MAX_SIGNAL_SESSIONS} signal sessions are running; stop some first", 409)
+        return jsonify({"job_id": _launch_signal(s, params, common)})
+    except SignalStartError as e:
+        return err(str(e), e.code)
+
+
+@app.post("/api/signals/start-group")
+def signals_start_group():
+    """Several strategies in one run: one session each (same instrument, mode, day, time, speed), linked by a group id.
+    Body: {strategy_ids: [..], params: {strategy_id: "NAME=value, ..."}, instrument, mode, date, time, speed}."""
+    import uuid
+    b = request.json or {}
+    try:
+        ids = list(dict.fromkeys(int(x) for x in (b.get("strategy_ids") or [])))
+    except (TypeError, ValueError):
+        return err("bad strategy list")
+    if len(ids) < 2:
+        return err("choose at least two strategies (one strategy: use the normal start)")
+    if len(ids) > MAX_GROUP:
+        return err(f"at most {MAX_GROUP} strategies in one run")
+    try:
+        common = _signal_common(b)
+        chosen = [_signal_strategy(sid, (b.get("params") or {}).get(str(sid))) for sid in ids]   # validate all first
+        if _running_signals() + len(chosen) > MAX_SIGNAL_SESSIONS:
+            raise SignalStartError(f"this run needs {len(chosen)} sessions; {_running_signals()} of {MAX_SIGNAL_SESSIONS} are in use", 409)
+        group = uuid.uuid4().hex[:8]
+        jids = [_launch_signal(s, params, common, group) for s, params in chosen]
+        return jsonify({"group": group, "job_ids": jids})
+    except SignalStartError as e:
+        return err(str(e), e.code)
+
+
+def _group_jobs(group):
+    con = conn()
+    rows = [dict(r) for r in con.execute("SELECT j.*, s.name FROM jobs j LEFT JOIN strategies s ON s.id=j.strategy_id "
+                                         "WHERE j.kind='signal' ORDER BY j.id").fetchall()]
+    con.close()
+    return [r for r in rows if json.loads(r["meta"] or "{}").get("group") == group]
+
+
+@app.get("/api/signals/group/<group>")
+def signals_group_view(group):
+    """Merged view of a group: the underlying's candles and VIX once, every member's signals (tagged), per-member status,
+    paper P&L inputs and indicator states (the page draws one member's indicators at a time)."""
+    js = _group_jobs(group)
+    if not js:
+        return err("not found", 404)
+    members, bars, vix, start, signals = [], [], [], {}, []
+    for j in js:
+        ev = _signal_events(j)
+        meta = json.loads(j["meta"] or "{}")
+        acted = meta.get("acted", {})
+        b = [e for e in ev if e["type"] == "bar"]
+        if len(b) > len(bars):
+            bars = b
+            vix = [{"t": e["t"], "c": e["c"]} for e in ev if e["type"] == "vix"]
+            start = next((e for e in ev if e["type"] == "start"), {})
+        end = next((e for e in reversed(ev) if e["type"] in ("end", "error")), None)
+        sig = [dict(e, acted=acted.get(str(e["id"])), job_id=j["id"], slug=meta.get("slug"), name=j["name"]) for e in ev if e["type"] == "signal"]
+        signals += sig
+        members.append({"id": j["id"], "slug": meta.get("slug"), "name": j["name"], "status": j["status"], "params": meta.get("params") or {},
+                        "clock": next((e["t"] for e in reversed(ev) if e["type"] == "clock"), None), "end": end,
+                        "states": [{"t": e["t"], "v": e["v"]} for e in ev if e["type"] == "state"],
+                        "logs": [e for e in ev if e["type"] == "log"][-40:], "n_signals": len(sig)})
+    signals.sort(key=lambda e: (e.get("date", ""), e["t"]))
+    m0 = json.loads(js[0]["meta"] or "{}")
+    status = "running" if any(m["status"] == "running" for m in members) else members[0]["status"]
+    return jsonify({"group": group, "status": status, "meta": {k: m0.get(k) for k in ("mode", "instrument", "date", "start", "speed")},
+                    "start": start, "bars": bars, "vix": vix, "signals": signals, "members": members})
+
+
+@app.post("/api/signals/group/<group>/stop")
+def signals_group_stop(group):
+    n = sum(bool(jobs.cancel(ws(), j["id"])) for j in _group_jobs(group) if j["status"] == "running")
+    return jsonify({"stopped": n})
+
+
+@app.post("/api/signals/group/<group>/delete")
+def signals_group_delete(group):
+    js = _group_jobs(group)
+    if any(j["status"] == "running" for j in js):
+        return err("stop the run first", 409)
+    con = conn()
+    for j in js:
+        _delete_job(con, j)
+    con.commit()
+    con.close()
+    return jsonify({"deleted": len(js)})
 
 
 @app.get("/api/signals/<int:jid>")

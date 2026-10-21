@@ -397,3 +397,14 @@ Only the options you change are used, for that one run or session; the strategy 
 - **Strategy page**: the options apply to **Run** and **Run range** (backtests). Such runs are labelled with their options in the runs table and the Results tab, and they are **not counted in the strategy's stats**, so a test with, say, the VIX filter off never mixes with the normal results. Use the runs-table filter "run with options" to see them.
 
 Signals sessions can be deleted: **Delete** on a finished session, or **Delete N finished** for all of them (running sessions are kept).
+
+## 19. Several strategies in one Signals run
+
+In the Signals tab, tick **more than one strategy** (up to 8) and click **Start N strategies**. They run together on the same instrument, mode, day, start time and speed, so you can compare their signals on the same market.
+
+- Each selected strategy has its own **Options** (open its row under the form); unchanged = its defaults.
+- The run is **one row** in the Sessions list ("3 strategies ..."), with **Stop all** and **Delete**.
+- The view shows one chart of the underlying and India VIX with **every strategy's signals**; markers carry the strategy's letter (A, B, C...) in its colour.
+- The table above the chart lists each strategy: options, status, signals, paper P&L of closed signals, open position. The **Indicators** radio chooses whose indicator lines and log are shown (all at once would be unreadable).
+- The signal table has a Strategy column; **Act** works per signal in live runs, as for a single strategy.
+- Up to 12 sessions can run at once in total (a run of 3 strategies uses 3).

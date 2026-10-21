@@ -340,14 +340,17 @@ function optionsPanel(sid, getInst, chosen) {
 
 // ---------- signals: run a strategy live or replay a cached day; its orders appear as signals you can act on ----------
 function sigState() {
-  return st.sig = st.sig || { form: { strategy_id: "", instrument: "NIFTY", mode: "live", date: "", time: "09:15", speed: "30", params: "", opts: {} }, sel: null, view: null, sessions: null, mode: null, modeAt: 0, hide: {} };
+  return st.sig = st.sig || { form: { ids: [], instrument: "NIFTY", mode: "live", date: "", time: "09:15", speed: "30", optsBy: {} }, sel: null, view: null, group: null, sessions: null, mode: null, modeAt: 0, hide: {}, ind: null };
 }
+const GROUP_COLORS = ["#2457d6", "#c0262d", "#0b7a46", "#b8860b", "#8e44ad", "#d35400", "#16a085", "#c2185b"];
 async function loadSignals() {
   const S = sigState();
   S.sessions = (await api("/api/signals/sessions")).items;
   if (!S.mode || Date.now() - S.modeAt > 15000) { S.mode = await api("/api/signals/mode"); S.modeAt = Date.now(); }
-  if (!S.sel && S.sessions.length) S.sel = S.sessions[0].id;
-  S.view = S.sel ? await api("/api/signals/" + S.sel) : null;
+  if (!S.sel && S.sessions.length) S.sel = S.sessions[0].group ? "g:" + S.sessions[0].group : S.sessions[0].id;
+  S.view = S.group = null;
+  if (typeof S.sel === "string" && S.sel.startsWith("g:")) S.group = await api("/api/signals/group/" + S.sel.slice(2));
+  else if (S.sel) S.view = await api("/api/signals/" + S.sel);
 }
 function sigPnl(sigs) {          // FIFO pairing of paper fills per symbol: realised P&L of closed signals, open quantity
   const open = {}; let pnl = 0;
@@ -423,9 +426,9 @@ function sigChart(v) {
   if (v.start && v.start.start && v.meta.mode === "replay") { const sx = x(tm(v.start.start)); body += `<line x1="${sx.toFixed(1)}" x2="${sx.toFixed(1)}" y1="${M.t}" y2="${H - M.b}" stroke="#b8860b" stroke-dasharray="4 3"/><text x="${(sx + 3).toFixed(1)}" y="${M.t + 10}" font-size="10" fill="#b8860b">replay from ${v.start.start}</text>`; }
   for (const s of sigs) {
     const cx = x(tm(s.t)), cy = y(s.underlying), ce = /CE$/.test(s.symbol), buy = s.action === "BUY";
-    const col = !buy ? "#667085" : ce ? GREEN : RED, label = !buy ? "exit" : ce ? "CE" : "PE";
+    const col = s.color || (!buy ? "#667085" : ce ? GREEN : RED), label = (s.tag ? s.tag + " " : "") + (!buy ? "exit" : ce ? "CE" : "PE");   // group runs: colour + letter per strategy
     const path = !buy ? `M${cx - 5},${cy - 5}L${cx + 5},${cy + 5}M${cx - 5},${cy + 5}L${cx + 5},${cy - 5}` : ce ? `M${cx},${cy - 7}L${cx - 6},${cy + 5}L${cx + 6},${cy + 5}Z` : `M${cx},${cy + 7}L${cx - 6},${cy - 5}L${cx + 6},${cy - 5}Z`;
-    body += `<path d="${path}" fill="${col}" stroke="${col}" stroke-width="2"/><text x="${cx.toFixed(1)}" y="${(buy && !ce ? cy - 9 : cy + 18).toFixed(1)}" font-size="10" font-weight="600" text-anchor="middle" fill="${col}">${label} #${s.id}</text>`;
+    body += `<path d="${path}" fill="${col}" stroke="${col}" stroke-width="2"/><text x="${cx.toFixed(1)}" y="${(buy && !ce ? cy - 9 : cy + 18).toFixed(1)}" font-size="10" font-weight="600" text-anchor="middle" fill="${col}">${s.tag ? label : label + " #" + s.id}</text>`;
   }
   let vixSvg = "", VH = 0;
   const vx = (v.vix || []);
@@ -444,7 +447,7 @@ function sigChart(v) {
 function signalsView() {
   const S = sigState(), F = S.form, d = st.data;
   const strategies = d.strategies.filter(s => !s.archived_at && s.file);
-  const set = (k) => (e) => { F[k] = e.target.value; if (k === "strategy_id" || k === "instrument") { F.opts = {}; render(); } if (k === "mode") render(); };
+  const set = (k) => (e) => { F[k] = e.target.value; if (k === "instrument") { F.optsBy = {}; render(); } if (k === "mode") render(); };
   const md = S.mode;
   const modeBanner = !md ? null : !md.ok ? h("div", { class: "banner small" }, "OpenAlgo not reachable: " + md.message)
     : h("div", { class: "row small", style: "margin-bottom:8px" }, h("b", {}, "OpenAlgo: "),
@@ -455,14 +458,28 @@ function signalsView() {
         if (on && c !== "LIVE") { e.target.checked = false; return; }
         act(async () => { await api("/api/signals/live-orders", { on, confirm: c }); S.modeAt = 0; });
       } }), " allow live orders"));
+  F.ids = F.ids.filter(id => strategies.some(s => s.id === id));
+  const toggle = (id) => { if (F.ids.includes(id)) { F.ids = F.ids.filter(x => x !== id); delete F.optsBy[id]; } else if (F.ids.length < 8) F.ids = [...F.ids, id]; else alert("At most 8 strategies in one run."); render(); };
   const start = () => {
-    if (!F.strategy_id) { alert("Choose a strategy."); return; }
+    if (!F.ids.length) { alert("Choose at least one strategy."); return; }
     if (F.mode === "replay" && !F.date) { alert("Choose the replay date."); return; }
-    act(async () => { const r = await api("/api/signals/start", { ...F, params: paramsString(F.opts) }); S.sel = r.job_id; });
+    const common = { instrument: F.instrument, mode: F.mode, date: F.date, time: F.time, speed: F.speed };
+    act(async () => {
+      if (F.ids.length === 1) { const r = await api("/api/signals/start", { ...common, strategy_id: F.ids[0], params: paramsString(F.optsBy[F.ids[0]] || {}) }); S.sel = r.job_id; }
+      else { const params = {}; F.ids.forEach(id => params[id] = paramsString(F.optsBy[id] || {}));
+        const r = await api("/api/signals/start-group", { ...common, strategy_ids: F.ids, params }); S.sel = "g:" + r.group; S.ind = null; }
+    });
   };
-  const form = h("div", { class: "card" }, h("b", {}, "Generate signals"),
+  const picker = h("div", { class: "row small", style: "flex-wrap:wrap;gap:4px;margin-top:8px" }, h("b", {}, "Strategies:"),
+    strategies.map(s => h("label", { class: "chip", style: `cursor:pointer;${F.ids.includes(s.id) ? "outline:2px solid var(--acc)" : ""}` },
+      h("input", { type: "checkbox", checked: F.ids.includes(s.id), onchange: () => toggle(s.id) }), " ", s.name)),
+    F.ids.length ? h("button", { class: "small", onclick: () => { F.ids = []; F.optsBy = {}; render(); } }, "Clear") : null);
+  const opts = F.ids.map(id => { const s = strategies.find(x => x.id === id); F.optsBy[id] = F.optsBy[id] || {};
+    const n = Object.keys(F.optsBy[id]).length;
+    return h("details", { open: F.ids.length === 1 }, h("summary", { class: "small" }, h("b", {}, s ? s.name : id), n ? h("span", { class: "chip" }, paramsString(F.optsBy[id])) : h("span", { class: "mute" }, " defaults")),
+      optionsPanel(id, () => F.instrument, F.optsBy[id])); });
+  const form = h("div", { class: "card" }, h("b", {}, "Generate signals"), picker,
     h("div", { class: "row small", style: "margin-top:8px;flex-wrap:wrap" },
-      h("select", { onchange: set("strategy_id") }, h("option", { value: "" }, "strategy…"), strategies.map(s => h("option", { value: s.id, selected: String(s.id) === String(F.strategy_id) }, s.name))),
       h("select", { onchange: set("instrument") }, d.instruments.map(i => h("option", { value: i, selected: i === F.instrument }, i))),
       h("label", {}, h("input", { type: "radio", name: "sigmode", checked: F.mode === "live", onchange: () => { F.mode = "live"; render(); } }), " live (today, real time)"),
       h("label", {}, h("input", { type: "radio", name: "sigmode", checked: F.mode === "replay", onchange: () => { F.mode = "replay"; render(); } }), " replay a day"),
@@ -470,44 +487,94 @@ function signalsView() {
         h("input", { type: "date", value: F.date, onchange: set("date"), title: "a day with complete cached data (Data tab)" }),
         h("label", {}, "from ", h("input", { type: "time", value: F.time, min: "09:15", max: "15:30", onchange: set("time"), title: "runs at full speed until this time, then the chart builds up" })),
         h("select", { onchange: set("speed"), title: "simulated seconds per real second" }, [["1", "1x (real time)"], ["10", "10x"], ["30", "30x"], ["60", "60x"], ["300", "300x"], ["0", "no pause"]].map(([v, t]) => h("option", { value: v, selected: F.speed === v }, t)))] : null,
-      h("button", { class: "primary", onclick: start }, "Start")),
-    F.strategy_id ? optionsPanel(F.strategy_id, () => F.instrument, F.opts) : null,
-    h("div", { class: "mute small", style: "margin-top:6px" }, "The strategy's own code runs; its orders are NOT sent: they appear below as signals (filled on paper at the current price so the strategy keeps managing its position). Live: candles and prices from OpenAlgo. Replay: the cached candles of that day, no lookahead."));
+      h("button", { class: "primary", onclick: start }, F.ids.length > 1 ? `Start ${F.ids.length} strategies` : "Start")),
+    opts.length ? h("div", { style: "margin-top:4px" }, opts) : null,
+    h("div", { class: "mute small", style: "margin-top:6px" }, "Tick one or more strategies (up to 8). Several strategies run together on the same instrument and day and their signals appear on one chart. The strategy's own code runs; its orders are NOT sent: they appear below as signals (filled on paper at the current price so the strategy keeps managing its position). Live: candles and prices from OpenAlgo. Replay: the cached candles of that day, no lookahead."));
+  // ---- sessions: a multi-strategy run is one row ----
   const ses = S.sessions || [];
+  const rowsOut = [], seen = new Set();
+  ses.forEach(s => {
+    if (!s.group) { rowsOut.push({ kind: "one", s }); return; }
+    if (seen.has(s.group)) return; seen.add(s.group);
+    rowsOut.push({ kind: "group", g: s.group, members: ses.filter(x => x.group === s.group), s });
+  });
   const nDone = ses.filter(s => s.status !== "running").length;
+  const desc = (s) => (s.mode === "replay" ? `replay ${s.date} from ${s.start || "open"} ×${s.speed}` : "LIVE");
+  const sessionRow = (r) => {
+    if (r.kind === "one") { const s = r.s;
+      return h("tr", { class: "click" + (s.id === S.sel ? " on" : ""), onclick: () => { S.sel = s.id; refresh(); } },
+        h("td", {}, "#" + s.id), h("td", {}, s.name || s.slug), h("td", {}, s.instrument), h("td", { class: "small" }, desc(s),
+          s.params && Object.keys(s.params).length ? h("div", { class: "mute" }, paramsText(s.params)) : null),
+        h("td", {}, badge(s.status, s.status === "running")), h("td", { class: "small mute" }, dt(s.started)),
+        h("td", {}, s.status === "running" ? h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); act(() => api(`/api/signals/${s.id}/stop`, {})); } }, "Stop")
+          : h("button", { class: "danger small", title: "Delete this session and its files", onclick: (e) => { e.stopPropagation(); if (confirm(`Delete session #${s.id}?`)) act(async () => { await api(`/api/jobs/${s.id}/delete`, {}); if (S.sel === s.id) { S.sel = null; S.view = null; } }); } }, "Delete")));
+    }
+    const running = r.members.some(m => m.status === "running"), key = "g:" + r.g;
+    return h("tr", { class: "click" + (key === S.sel ? " on" : ""), onclick: () => { S.sel = key; S.ind = null; refresh(); } },
+      h("td", {}, h("span", { class: "chip" }, `${r.members.length} strategies`)), h("td", {}, r.members.slice().reverse().map(m => m.name || m.slug).join(", ")), h("td", {}, r.s.instrument),
+      h("td", { class: "small" }, desc(r.s)), h("td", {}, badge(running ? "running" : r.members[0].status, running)), h("td", { class: "small mute" }, dt(r.members[r.members.length - 1].started)),
+      h("td", {}, running ? h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); act(() => api(`/api/signals/group/${r.g}/stop`, {})); } }, "Stop all")
+        : h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); if (confirm(`Delete this run of ${r.members.length} strategies?`)) act(async () => { await api(`/api/signals/group/${r.g}/delete`, {}); if (S.sel === key) { S.sel = null; S.group = null; } }); } }, "Delete")));
+  };
   const list = h("div", { class: "card" }, h("div", { class: "row" }, h("b", {}, "Sessions"), h("span", { style: "flex:1" }),
-      nDone ? h("button", { class: "danger small", onclick: () => confirm(`Delete all ${nDone} finished sessions and their files? Running sessions are kept.`) && act(async () => { await api("/api/signals/clear", {}); S.sel = null; S.view = null; }) }, `Delete ${nDone} finished`) : null), ses.length ? h("table", {}, h("tbody", {}, ses.map(s => h("tr", { class: "click" + (s.id === S.sel ? " on" : ""), onclick: () => { S.sel = s.id; refresh(); } },
-      h("td", {}, "#" + s.id), h("td", {}, s.name || s.slug), h("td", {}, s.instrument), h("td", { class: "small" }, (s.mode === "replay" ? `replay ${s.date} from ${s.start || "open"} ×${s.speed}` : "LIVE"),
-        s.params && Object.keys(s.params).length ? h("div", { class: "mute" }, Object.entries(s.params).map(([k, x]) => `${k}=${x}`).join(", ")) : null),
-      h("td", {}, badge(s.status, s.status === "running")), h("td", { class: "small mute" }, dt(s.started)),
-      h("td", {}, s.status === "running" ? h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); act(() => api(`/api/signals/${s.id}/stop`, {})); } }, "Stop")
-        : h("button", { class: "danger small", title: "Delete this session and its files", onclick: (e) => { e.stopPropagation(); if (confirm(`Delete session #${s.id}?`)) act(async () => { await api(`/api/jobs/${s.id}/delete`, {}); if (S.sel === s.id) { S.sel = null; S.view = null; } }); } }, "Delete")))))) : h("div", { class: "mute small" }, "No sessions yet."));
-  const v = S.view;
+      nDone ? h("button", { class: "danger small", onclick: () => confirm(`Delete all ${nDone} finished sessions and their files? Running sessions are kept.`) && act(async () => { await api("/api/signals/clear", {}); S.sel = null; S.view = null; S.group = null; }) }, `Delete ${nDone} finished`) : null),
+    rowsOut.length ? h("table", {}, h("tbody", {}, rowsOut.map(sessionRow))) : h("div", { class: "mute small" }, "No sessions yet."));
+  const actBtn = (s, jobId, running, live) => s.acted ? h("span", { class: "small" }, `sent ${s.acted.paper ? "(paper)" : "(LIVE)"} #${s.acted.orderid || ""}`)
+    : live ? h("button", { class: "primary small", disabled: !(running && !s.acted), title: running ? "Send this order to OpenAlgo now (market order)" : "session stopped",
+        onclick: () => confirm(`Send ${s.action} ${s.qty} ${s.symbol} as a MARKET order to OpenAlgo${S.mode && S.mode.analyze_mode ? " (Analyzer: paper)" : " (LIVE: real money)"}?`) && act(() => api(`/api/signals/${jobId}/act`, { signal_id: s.id })) }, "Act")
+    : h("span", { class: "mute small" }, "replay");
+  const legend = h("div", { class: "mute small" }, "▲ CE buy (bullish) · ▼ PE buy (bearish) · ✕ exit, drawn at the underlying's price when the signal fired. Lower panel: India VIX (dashed lines = signal times). Rising VIX lifts option premiums, which helps an option buyer; flat or falling VIX lets time decay win, so a sideways market costs money even without an adverse move.");
   let detail = null;
+  const v = S.view;
   if (v) {
     const live = v.meta.mode === "live", p = sigPnl(v.signals);
-    const sendable = (s) => live && !s.acted && v.status === "running";
     const rows = v.signals.slice().reverse().map(s => h("tr", {}, h("td", {}, "#" + s.id), h("td", {}, s.t), h("td", {}, h("b", { class: s.action === "BUY" ? (/CE$/.test(s.symbol) ? "pos" : "neg") : "" }, s.action)),
       h("td", {}, s.symbol), h("td", {}, s.qty), h("td", {}, s.price ?? "–"), h("td", { class: "small mute" }, s.underlying ?? ""),
-      h("td", { class: "small mute" }, vixAt(v, s.t)),
-      h("td", {}, s.acted ? h("span", { class: "small" }, `sent ${s.acted.paper ? "(paper)" : "(LIVE)"} #${s.acted.orderid || ""}`)
-        : live ? h("button", { class: "primary small", disabled: !sendable(s), title: v.status === "running" ? "Send this order to OpenAlgo now (market order)" : "session stopped",
-            onclick: () => confirm(`Send ${s.action} ${s.qty} ${s.symbol} as a MARKET order to OpenAlgo${S.mode && S.mode.analyze_mode ? " (Analyzer: paper)" : " (LIVE: real money)"}?`) && act(() => api(`/api/signals/${v.id}/act`, { signal_id: s.id })) }, "Act")
-        : h("span", { class: "mute small" }, "replay"))));
+      h("td", { class: "small mute" }, vixAt(v, s.t)), h("td", {}, actBtn(s, v.id, v.status === "running", live))));
     detail = h("div", { class: "card" },
       h("div", { class: "row" }, h("b", {}, `#${v.id} ${v.meta.slug} · ${v.meta.instrument} · ${live ? "LIVE" : "replay " + v.meta.date}`),
-        v.meta.params && Object.keys(v.meta.params).length ? h("span", { class: "chip" }, Object.entries(v.meta.params).map(([k, x]) => `${k}=${x}`).join(", ")) : null,
+        v.meta.params && Object.keys(v.meta.params).length ? h("span", { class: "chip" }, paramsText(v.meta.params)) : null,
         badge(v.status, v.status === "running"),
         h("span", { class: "mute small" }, v.clock ? ` clock ${v.clock}` : ""), h("span", { style: "flex:1" }),
         h("span", { class: "small" }, "paper P&L of closed signals "), money(p.pnl),
         p.openQty.length ? h("span", { class: "small warn" }, " · open: " + p.openQty.map(([k, n]) => `${k} ${n}`).join(", ")) : null),
       v.end && v.end.type === "error" ? h("div", { class: "banner small" }, "Stopped with an error: " + v.end.message) : null,
       v.log_tail ? h("pre", { class: "small" }, v.log_tail) : null,
-      sigChart(v), sigValues(v),
-      h("div", { class: "mute small" }, "▲ CE buy (bullish) · ▼ PE buy (bearish) · ✕ exit, drawn at the underlying's price when the signal fired. Lower panel: India VIX (dashed lines = signal times). Rising VIX lifts option premiums, which helps an option buyer; flat or falling VIX lets time decay win, so a sideways market costs money even without an adverse move."),
+      sigChart(v), sigValues(v), legend,
       h("h4", {}, `Signals (${v.signals.length})`),
       v.signals.length ? h("table", {}, h("thead", {}, h("tr", {}, ["#", "Time", "Action", "Symbol", "Qty", "Price", "Underlying", "VIX", ""].map(t => h("th", {}, t)))), h("tbody", {}, rows)) : h("div", { class: "mute small" }, "No signal yet."),
       h("h4", {}, "Strategy log"), h("pre", { class: "small", style: "max-height:260px;overflow:auto" }, v.logs.slice().reverse().map(l => `${l.t} | ${l.msg}`).join("\n") || "(empty)"));
+  }
+  const G = S.group;
+  if (G) {
+    const live = G.meta.mode === "live", tags = {};
+    G.members.forEach((m, i) => tags[m.id] = { tag: String.fromCharCode(65 + i), color: GROUP_COLORS[i % GROUP_COLORS.length], m });
+    if (!S.ind || !tags[S.ind]) S.ind = G.members[0].id;
+    const sigs = G.signals.map(s => ({ ...s, tag: tags[s.job_id].tag, color: tags[s.job_id].color }));
+    const indM = tags[S.ind].m;
+    const cv = { bars: G.bars, vix: G.vix, signals: sigs, states: indM.states, start: G.start, meta: G.meta, status: G.status };
+    const summary = h("table", {}, h("thead", {}, h("tr", {}, ["", "Strategy", "Options", "Status", "Clock", "Signals", "Paper P&L (closed)", "Open", "Indicators"].map(t => h("th", {}, t)))),
+      h("tbody", {}, G.members.map(m => { const t = tags[m.id], pp = sigPnl(sigs.filter(s => s.job_id === m.id));
+        return h("tr", {}, h("td", {}, h("b", { style: `color:${t.color}` }, t.tag)), h("td", {}, m.name || m.slug),
+          h("td", { class: "small mute" }, paramsText(m.params) || "defaults"), h("td", {}, badge(m.status, m.status === "running"), m.end && m.end.type === "error" ? h("div", { class: "small neg" }, m.end.message.slice(0, 120)) : null),
+          h("td", { class: "small mute" }, m.clock || ""), h("td", {}, m.n_signals), h("td", {}, money(pp.pnl)),
+          h("td", { class: "small warn" }, pp.openQty.map(([k, n]) => `${k} ${n}`).join(", ")),
+          h("td", {}, h("input", { type: "radio", name: "sigind", checked: m.id === S.ind, title: "draw this strategy's indicator lines and show its log", onchange: () => { S.ind = m.id; S.hide = {}; render(); } })));
+      })));
+    const total = G.members.reduce((a, m) => a + sigPnl(sigs.filter(s => s.job_id === m.id)).pnl, 0);
+    const rows = sigs.slice().reverse().map(s => h("tr", {}, h("td", {}, h("b", { style: `color:${s.color}` }, s.tag)), h("td", { class: "small" }, s.name || s.slug), h("td", {}, s.t),
+      h("td", {}, h("b", { class: s.action === "BUY" ? (/CE$/.test(s.symbol) ? "pos" : "neg") : "" }, s.action)), h("td", {}, s.symbol), h("td", {}, s.qty), h("td", {}, s.price ?? "–"),
+      h("td", { class: "small mute" }, s.underlying ?? ""), h("td", { class: "small mute" }, vixAt(cv, s.t)),
+      h("td", {}, actBtn(s, s.job_id, tags[s.job_id].m.status === "running", live))));
+    detail = h("div", { class: "card" },
+      h("div", { class: "row" }, h("b", {}, `${G.members.length} strategies · ${G.meta.instrument} · ${live ? "LIVE" : "replay " + G.meta.date + " from " + (G.meta.start || "open") + " ×" + G.meta.speed}`),
+        badge(G.status, G.status === "running"), h("span", { style: "flex:1" }), h("span", { class: "small" }, "paper P&L of closed signals, all strategies "), money(total)),
+      summary, sigChart(cv),
+      h("div", { class: "small" }, h("span", { class: "mute" }, "Indicator lines and values of "), h("b", { style: `color:${tags[S.ind].color}` }, `${tags[S.ind].tag} ${indM.name || indM.slug}`), h("span", { class: "mute" }, " (choose another in the table above)")),
+      sigValues(cv), legend, h("div", { class: "mute small" }, "Markers carry the strategy letter (A, B, C…) in its colour."),
+      h("h4", {}, `Signals (${sigs.length})`),
+      sigs.length ? h("table", {}, h("thead", {}, h("tr", {}, ["", "Strategy", "Time", "Action", "Symbol", "Qty", "Price", "Underlying", "VIX", ""].map(t => h("th", {}, t)))), h("tbody", {}, rows)) : h("div", { class: "mute small" }, "No signal yet."),
+      h("h4", {}, `Log of ${tags[S.ind].tag} ${indM.name || indM.slug}`), h("pre", { class: "small", style: "max-height:260px;overflow:auto" }, indM.logs.slice().reverse().map(l => `${l.t} | ${l.msg}`).join("\n") || "(empty)"));
   }
   return h("div", {}, modeBanner, form, list, detail);
 }
