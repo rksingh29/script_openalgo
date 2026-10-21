@@ -289,15 +289,58 @@ function resultsView() {
         h("button", { class: "danger small", onclick: () => act(() => deleteRuns(g.map(r => r.id))) }, `Delete ${g.length} run(s)`)),
       h("table", {}, h("thead", {}, h("tr", {}, [st.resultsMode === "date" ? "Strategy" : "Date", "Instrument", "Trades", "P&L", "Win rate", "Review", ""].map(t => h("th", {}, t)))),
         h("tbody", {}, g.map(r => h("tr", { class: "click", onclick: () => openRun(r.id) }, h("td", {}, st.resultsMode === "date" ? r.name : r.day), h("td", {}, r.instrument), h("td", {}, r.trades), h("td", {}, money(r.gross_pnl)),
-          h("td", {}, r.win_rate == null ? "–" : Math.round(r.win_rate * 100) + "%"), h("td", {}, r.verdict || ""),
+          h("td", {}, r.win_rate == null ? "–" : Math.round(r.win_rate * 100) + "%"), h("td", {}, r.verdict || "", runOpts(r) ? h("div", { class: "chip small", title: "run with options; not counted in the stats" }, paramsText(runOpts(r))) : null),
           h("td", {}, h("button", { class: "danger small", title: "Delete this run", onclick: (e) => { e.stopPropagation(); act(() => deleteRuns([r.id])); } }, "×")))))));
   });
   return h("div", {}, mode, h("div", { class: "mute small", style: "margin-bottom:8px" }, "P&L is gross, without slippage or charges. Few days = low sample; do not read a ranking into it."), cards.length ? cards : h("div", { class: "card mute" }, "No results yet."));
 }
 
+// ---------- strategy options chosen per run (module constants of the strategy) ----------
+st.opts = st.opts || {};                          // "sid|INSTRUMENT" -> [{name, value, type, comment, toggle, instrument_value}]
+function paramsString(chosen) { return Object.entries(chosen).map(([k, v]) => `${k}=${v}`).join(", "); }
+const paramsText = (p) => p && Object.keys(p).length ? Object.entries(p).map(([k, v]) => `${k}=${v}`).join(", ") : "";
+function optionsPanel(sid, getInst, chosen) {
+  // Yes/no options and "0 = off" numbers as checkboxes; everything else under "More options". Only changed values are sent.
+  const box = h("div", { class: "small", style: "margin-top:6px" }), on = {};
+  const draw = () => {
+    if (!sid) { box.replaceChildren(); return; }
+    const inst = getInst(), key = sid + "|" + inst, items = st.opts[key];
+    if (items === undefined) {
+      st.opts[key] = null; box.replaceChildren(h("span", { class: "mute" }, "loading options…"));
+      api(`/api/strategies/${sid}/params?instrument=${encodeURIComponent(inst)}`).then(r => { st.opts[key] = r.items; draw(); }).catch(() => { st.opts[key] = []; draw(); });
+      return;
+    }
+    if (items === null) return;
+    const dflt = (it) => it.instrument_value ?? it.value;
+    const cur = (it) => (it.name in chosen ? chosen[it.name] : dflt(it));
+    const setv = (it, v) => { if (v === dflt(it)) delete chosen[it.name]; else chosen[it.name] = v; draw(); };
+    const num = (it, s) => { const x = it.type === "int" ? parseInt(s, 10) : parseFloat(s); return isNaN(x) ? dflt(it) : x; };
+    const tip = (it) => (it.comment || "") + (it.instrument_value != null ? ` | ${inst} default: ${it.instrument_value} (file: ${it.value})` : "");
+    const label = (it) => h("span", { title: tip(it) }, it.name, it.instrument_value != null ? h("span", { class: "mute" }, ` (${inst}: ${it.instrument_value})`) : null);
+    const main = items.filter(it => it.type === "bool" || it.toggle), more = items.filter(it => !(it.type === "bool" || it.toggle));
+    const mainEls = main.map(it => {
+      if (it.type === "bool") return h("label", { class: "chip", style: "cursor:pointer" }, h("input", { type: "checkbox", checked: !!cur(it), onchange: (e) => setv(it, e.target.checked) }), " ", label(it));
+      const v = cur(it), isOn = v !== 0; if (isOn) on[it.name] = v;
+      return h("span", { class: "chip" }, h("label", { style: "cursor:pointer" }, h("input", { type: "checkbox", checked: isOn,
+          onchange: (e) => setv(it, e.target.checked ? (on[it.name] || (dflt(it) || it.value || 1)) : 0) }), " ", label(it)),
+        isOn ? h("input", { type: "number", step: "any", value: v, style: "width:60px;margin-left:4px", onchange: (e) => setv(it, num(it, e.target.value)) }) : null);
+    });
+    const moreEls = more.map(it => h("label", { class: "chip", title: tip(it) }, it.name, " ",
+      h("input", { value: cur(it), style: "width:" + (it.type === "str" ? 64 : 58) + "px", onchange: (e) => setv(it, it.type === "str" ? e.target.value : num(it, e.target.value)) })));
+    const changed = paramsString(chosen);
+    box.replaceChildren(
+      h("div", { class: "row", style: "flex-wrap:wrap;gap:4px" }, h("b", {}, "Options:"), mainEls.length ? mainEls : h("span", { class: "mute" }, "none")),
+      more.length ? h("details", {}, h("summary", { class: "mute" }, `More options (${more.length})`), h("div", { class: "row", style: "flex-wrap:wrap;gap:4px;margin-top:4px" }, moreEls)) : null,
+      h("div", { class: "mute" }, changed ? ["This run: ", h("b", {}, changed), " ", h("button", { class: "small", onclick: () => { Object.keys(chosen).forEach(k => delete chosen[k]); draw(); } }, "Reset to defaults")]
+        : "Defaults of the strategy file (and the instrument's own settings) are used. Changed options apply to this run only; such runs are labelled and kept out of the strategy's stats."));
+  };
+  box.redraw = draw; draw();
+  return box;
+}
+
 // ---------- signals: run a strategy live or replay a cached day; its orders appear as signals you can act on ----------
 function sigState() {
-  return st.sig = st.sig || { form: { strategy_id: "", instrument: "NIFTY", mode: "live", date: "", time: "09:15", speed: "30", params: "" }, sel: null, view: null, sessions: null, mode: null, modeAt: 0, hide: {} };
+  return st.sig = st.sig || { form: { strategy_id: "", instrument: "NIFTY", mode: "live", date: "", time: "09:15", speed: "30", params: "", opts: {} }, sel: null, view: null, sessions: null, mode: null, modeAt: 0, hide: {} };
 }
 async function loadSignals() {
   const S = sigState();
@@ -401,7 +444,7 @@ function sigChart(v) {
 function signalsView() {
   const S = sigState(), F = S.form, d = st.data;
   const strategies = d.strategies.filter(s => !s.archived_at && s.file);
-  const set = (k) => (e) => { F[k] = e.target.value; if (k === "mode") render(); };
+  const set = (k) => (e) => { F[k] = e.target.value; if (k === "strategy_id" || k === "instrument") { F.opts = {}; render(); } if (k === "mode") render(); };
   const md = S.mode;
   const modeBanner = !md ? null : !md.ok ? h("div", { class: "banner small" }, "OpenAlgo not reachable: " + md.message)
     : h("div", { class: "row small", style: "margin-bottom:8px" }, h("b", {}, "OpenAlgo: "),
@@ -415,7 +458,7 @@ function signalsView() {
   const start = () => {
     if (!F.strategy_id) { alert("Choose a strategy."); return; }
     if (F.mode === "replay" && !F.date) { alert("Choose the replay date."); return; }
-    act(async () => { const r = await api("/api/signals/start", F); S.sel = r.job_id; });
+    act(async () => { const r = await api("/api/signals/start", { ...F, params: paramsString(F.opts) }); S.sel = r.job_id; });
   };
   const form = h("div", { class: "card" }, h("b", {}, "Generate signals"),
     h("div", { class: "row small", style: "margin-top:8px;flex-wrap:wrap" },
@@ -427,16 +470,18 @@ function signalsView() {
         h("input", { type: "date", value: F.date, onchange: set("date"), title: "a day with complete cached data (Data tab)" }),
         h("label", {}, "from ", h("input", { type: "time", value: F.time, min: "09:15", max: "15:30", onchange: set("time"), title: "runs at full speed until this time, then the chart builds up" })),
         h("select", { onchange: set("speed"), title: "simulated seconds per real second" }, [["1", "1x (real time)"], ["10", "10x"], ["30", "30x"], ["60", "60x"], ["300", "300x"], ["0", "no pause"]].map(([v, t]) => h("option", { value: v, selected: F.speed === v }, t)))] : null,
-      h("input", { placeholder: "parameters, e.g. CONFIRM_BARS=2", value: F.params, style: "min-width:230px", onchange: set("params"),
-        title: "Optional: strategy constants for this session only (NAME=value, comma-separated). The strategy file is not changed." }),
       h("button", { class: "primary", onclick: start }, "Start")),
+    F.strategy_id ? optionsPanel(F.strategy_id, () => F.instrument, F.opts) : null,
     h("div", { class: "mute small", style: "margin-top:6px" }, "The strategy's own code runs; its orders are NOT sent: they appear below as signals (filled on paper at the current price so the strategy keeps managing its position). Live: candles and prices from OpenAlgo. Replay: the cached candles of that day, no lookahead."));
   const ses = S.sessions || [];
-  const list = h("div", { class: "card" }, h("b", {}, "Sessions"), ses.length ? h("table", {}, h("tbody", {}, ses.map(s => h("tr", { class: "click" + (s.id === S.sel ? " on" : ""), onclick: () => { S.sel = s.id; refresh(); } },
+  const nDone = ses.filter(s => s.status !== "running").length;
+  const list = h("div", { class: "card" }, h("div", { class: "row" }, h("b", {}, "Sessions"), h("span", { style: "flex:1" }),
+      nDone ? h("button", { class: "danger small", onclick: () => confirm(`Delete all ${nDone} finished sessions and their files? Running sessions are kept.`) && act(async () => { await api("/api/signals/clear", {}); S.sel = null; S.view = null; }) }, `Delete ${nDone} finished`) : null), ses.length ? h("table", {}, h("tbody", {}, ses.map(s => h("tr", { class: "click" + (s.id === S.sel ? " on" : ""), onclick: () => { S.sel = s.id; refresh(); } },
       h("td", {}, "#" + s.id), h("td", {}, s.name || s.slug), h("td", {}, s.instrument), h("td", { class: "small" }, (s.mode === "replay" ? `replay ${s.date} from ${s.start || "open"} ×${s.speed}` : "LIVE"),
         s.params && Object.keys(s.params).length ? h("div", { class: "mute" }, Object.entries(s.params).map(([k, x]) => `${k}=${x}`).join(", ")) : null),
       h("td", {}, badge(s.status, s.status === "running")), h("td", { class: "small mute" }, dt(s.started)),
-      h("td", {}, s.status === "running" ? h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); act(() => api(`/api/signals/${s.id}/stop`, {})); } }, "Stop") : null))))) : h("div", { class: "mute small" }, "No sessions yet."));
+      h("td", {}, s.status === "running" ? h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); act(() => api(`/api/signals/${s.id}/stop`, {})); } }, "Stop")
+        : h("button", { class: "danger small", title: "Delete this session and its files", onclick: (e) => { e.stopPropagation(); if (confirm(`Delete session #${s.id}?`)) act(async () => { await api(`/api/jobs/${s.id}/delete`, {}); if (S.sel === s.id) { S.sel = null; S.view = null; } }); } }, "Delete")))))) : h("div", { class: "mute small" }, "No sessions yet."));
   const v = S.view;
   let detail = null;
   if (v) {
@@ -582,13 +627,16 @@ function renderPage() {
   const live = st.data && st.data.strategies.find(s => s.id === d.id);
   const status = live ? live.status : d.status;
   const running = status === "in_progress";
-  const inst = h("select", { id: "pinst" }, (st.data ? st.data.instruments : ["NIFTY"]).map(i => h("option", { value: i }, i)));
+  p.opts = p.opts || {};
+  const inst = h("select", { id: "pinst", onchange: (e) => { p.inst = e.target.value; Object.keys(p.opts).forEach(k => delete p.opts[k]); optBox.redraw(); } },
+    (st.data ? st.data.instruments : ["NIFTY"]).map(i => h("option", { value: i, selected: i === p.inst }, i)));
+  const optBox = optionsPanel(d.id, () => p.inst || (st.data ? st.data.instruments[0] : "NIFTY"), p.opts);
   const date = h("input", { type: "date", id: "pdate", title: "empty = previous trading day" });
   const head = h("div", { class: "card" },
     h("div", { class: "row" },
       h("a", { href: "#" }, "← All strategies"), h("span", { style: "flex:1" }),
       inst, date,
-      running ? h("button", { class: "danger", onclick: () => confirm("Stop this test and put the strategy back in the queue?") && pact(() => api(`/api/strategies/${d.id}/stop`, {})) }, live && live.job === null ? "Reset" : "Stop") : h("button", { class: "primary", disabled: d.testable === "no", onclick: () => pact(() => api(`/api/strategies/${d.id}/run`, { instrument: $("#pinst").value, date: $("#pdate").value })) }, "Run"),
+      running ? h("button", { class: "danger", onclick: () => confirm("Stop this test and put the strategy back in the queue?") && pact(() => api(`/api/strategies/${d.id}/stop`, {})) }, live && live.job === null ? "Reset" : "Stop") : h("button", { class: "primary", disabled: d.testable === "no", onclick: () => pact(() => api(`/api/strategies/${d.id}/run`, { instrument: $("#pinst").value, date: $("#pdate").value, params: paramsString(p.opts) })) }, "Run"),
       h("button", { onclick: () => { const n = prompt("Name for the copy (it gets its own code files and can be edited and run separately):", d.name + " copy"); if (n) act(async () => { const r = await api(`/api/strategies/${d.id}/copy`, { name: n }); location.hash = "#/strategy/" + r.id; }); } }, "Copy…"),
       h("button", { onclick: () => { const n = prompt("New name:", d.name); if (n) pact(() => api(`/api/strategies/${d.id}/rename`, { name: n })); } }, "Rename"),
       h("button", { onclick: () => pact(() => api(`/api/strategies/${d.id}/archive`, { on: !d.archived_at })) }, d.archived_at ? "Unarchive" : "Archive"),
@@ -597,8 +645,9 @@ function renderPage() {
       h("label", {}, "from", h("input", { type: "date", id: "rfrom" })), h("label", {}, "to", h("input", { type: "date", id: "rto" })),
       h("label", {}, "or last", h("input", { type: "number", id: "rdays", min: 1, max: 60, style: "width:60px", placeholder: "N" }), "days"),
       h("label", { title: "also use days where the cached contract was not the nearest expiry (behaves differently)" }, h("input", { type: "checkbox", id: "rfar" }), "include far-expiry days"),
-      h("button", { class: "primary", disabled: running, onclick: () => { if (!$("#rfrom").value && !$("#rto").value && !$("#rdays").value) { alert("Give a date range or a number of days."); return; } pact(() => api(`/api/strategies/${d.id}/run`, { instrument: $("#pinst").value, from: $("#rfrom").value, to: $("#rto").value, days: $("#rdays").value, allow_far: $("#rfar").checked })); } }, "Run range"),
+      h("button", { class: "primary", disabled: running, onclick: () => { if (!$("#rfrom").value && !$("#rto").value && !$("#rdays").value) { alert("Give a date range or a number of days."); return; } pact(() => api(`/api/strategies/${d.id}/run`, { instrument: $("#pinst").value, from: $("#rfrom").value, to: $("#rto").value, days: $("#rdays").value, allow_far: $("#rfar").checked, params: paramsString(p.opts) })); } }, "Run range"),
       h("span", { class: "mute" }, "no Claude used; needs the code to exist (run once first)")),
+    d.file ? optBox : null,
     h("h2", { style: "margin:8px 0 4px" }, d.name),
     h("div", { class: "row small" }, h("span", { id: "pstatus" }, badge(d.archived_at ? "archived" : status, running), running && live ? " " + (live.phase || "") + " " + (live.status_note || "") : ""),
       h("span", { class: "mute" }, `${d.origin} · slug ${d.slug}`),
@@ -679,7 +728,8 @@ function codeTab(d, kind) {
         " ", h("button", { class: "small", onclick: () => confirm("Restore this version? The current text is saved as a version first.") && pact(async () => { await api(`/api/strategies/${d.id}/code/restore`, { name: v.name }); delete p.draft[key]; }) }, "Restore")))))) : h("div", { class: "small mute" }, "none yet"));
 }
 
-const runVersion = (d, r) => d.code_edited_at && r.created < d.code_edited_at ? "old" : "current";
+const runOpts = (r) => { try { return r.params ? JSON.parse(r.params) : null; } catch (e) { return null; } };
+const runVersion = (d, r) => runOpts(r) ? "options" : d.code_edited_at && r.created < d.code_edited_at ? "old" : "current";
 const runExpiry = (r) => r.nearest === 0 ? "far" : (r.dte != null ? "nearest" : "unknown");
 function runFilter(d, f) {
   return d.runs.filter(r => (!f.from || r.day >= f.from) && (!f.to || r.day <= f.to) && (!f.inst || r.instrument === f.inst)
@@ -706,7 +756,7 @@ function runsTab(d) {
     h("label", {}, "win rate ≥ ", h("input", { type: "number", class: "small", min: 0, max: 100, style: "width:55px", value: f.win ?? "", placeholder: "%", onchange: set("win") })),
     sel("review", "any review", uniq(d.runs.map(r => r.verdict || "")).map(x => [x, x])),
     sel("expiry", "any expiry", [["nearest", "nearest"], ["far", "far"], ["unknown", "unknown"]]),
-    sel("version", "any version", [["current", "current"], ["old", "old version"]]),
+    sel("version", "any version", [["current", "current"], ["old", "old version"], ["options", "run with options"]]),
     h("button", { class: "small", onclick: () => { st.page.rf = {}; renderPage(); } }, "Clear"),
     h("span", { class: "mute" }, `${rows.length} of ${d.runs.length} runs · P&L `), money(total),
     rows.length && rows.length < d.runs.length ? h("button", { class: "danger small", onclick: () => pact(() => deleteRuns(rows.map(r => r.id))) }, `Delete ${rows.length} shown`) : null);
@@ -714,7 +764,8 @@ function runsTab(d) {
     h("tbody", {}, rows.length ? rows.map(r => h("tr", { class: "click", onclick: () => openRun(r.id) }, h("td", {}, r.day), h("td", {}, r.instrument), h("td", {}, r.trades), h("td", {}, money(r.gross_pnl)),
       h("td", {}, r.win_rate == null ? "–" : Math.round(r.win_rate * 100) + "%"), h("td", {}, r.verdict || ""),
       h("td", { class: "small mute" }, r.nearest === 0 ? `far (${r.dte}d)` : (r.dte != null ? `nearest (${r.dte}d)` : "")),
-      h("td", { class: "small mute" }, d.code_edited_at && r.created < d.code_edited_at ? "old version" : "current"),
+      h("td", { class: "small mute" }, runOpts(r) ? h("span", { class: "chip", title: "run with options chosen in the UI; not counted in the stats" }, paramsText(runOpts(r)))
+        : d.code_edited_at && r.created < d.code_edited_at ? "old version" : "current"),
       h("td", {}, h("button", { class: "danger small", onclick: (e) => { e.stopPropagation(); pact(() => deleteRuns([r.id])); } }, "×"))))
       : h("tr", {}, h("td", { colspan: 9, class: "mute" }, "No run matches the filter.")))));
 }

@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS runs(
   id INTEGER PRIMARY KEY AUTOINCREMENT, strategy_id INTEGER NOT NULL REFERENCES strategies(id) ON DELETE CASCADE,
   instrument TEXT, day TEXT, executor TEXT DEFAULT 'option', trades INTEGER, gross_pnl REAL, win_rate REAL,
   max_dd REAL, verdict TEXT, result_dir TEXT, job_id INTEGER, created TEXT,
-  code_hash TEXT, dte INTEGER, nearest INTEGER DEFAULT 1);
+  code_hash TEXT, dte INTEGER, nearest INTEGER DEFAULT 1, params TEXT);
 CREATE TABLE IF NOT EXISTS jobs(
   id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT, strategy_id INTEGER, label TEXT, status TEXT,
   phase TEXT DEFAULT '', pid INTEGER, log_path TEXT, cmd TEXT, started TEXT, ended TEXT,
@@ -154,7 +154,7 @@ def _migrate(con):
     if "meta" not in jcols:
         con.execute("ALTER TABLE jobs ADD COLUMN meta TEXT DEFAULT '{}'")
     rcols = {r["name"] for r in con.execute("PRAGMA table_info(runs)").fetchall()}
-    for col, ddl in (("code_hash", "TEXT"), ("dte", "INTEGER"), ("nearest", "INTEGER DEFAULT 1")):
+    for col, ddl in (("code_hash", "TEXT"), ("dte", "INTEGER"), ("nearest", "INTEGER DEFAULT 1"), ("params", "TEXT")):
         if col not in rcols:
             con.execute(f"ALTER TABLE runs ADD COLUMN {col} {ddl}")
     for r in con.execute("SELECT id, family, origin FROM strategies WHERE tags IS NULL OR tags='[]'").fetchall():
@@ -316,22 +316,26 @@ def set_status(con, sid, status, phase="", note=""):
 
 # ---------------- runs ----------------
 def add_run(con, sid, instrument, day, summary, verdict, result_dir, job_id=None, executor="option",
-            code_hash=None, dte=None, nearest=1):
+            code_hash=None, dte=None, nearest=1, params=None):
+    """`params`: strategy options chosen for this run (None/{} = the strategy's defaults). Runs with options are kept
+    out of the strategy's headline stats so variants do not mix with the default results."""
+    params = params if params is not None else summary.get("params")
     con.execute("INSERT INTO runs(strategy_id,instrument,day,executor,trades,gross_pnl,win_rate,max_dd,verdict,"
-                "result_dir,job_id,created,code_hash,dte,nearest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "result_dir,job_id,created,code_hash,dte,nearest,params) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (sid, instrument, day, executor, summary.get("trades"), summary.get("gross_pnl"),
                  summary.get("win_rate"), summary.get("max_drawdown"), verdict, result_dir, job_id, now(),
-                 code_hash, dte, 1 if nearest else 0))
+                 code_hash, dte, 1 if nearest else 0, json.dumps(params, sort_keys=True) if params else None))
     con.commit()
 
 
 def strategy_stats(con):
     """Per strategy and instrument: days tested, total/avg P&L, win-day rate, worst day.
-    Only the LATEST run per (strategy, instrument, day, executor) counts, so re-running a day replaces it."""
+    Only the LATEST run per (strategy, instrument, day, executor) counts, so re-running a day replaces it. Runs made with
+    options chosen in the web app (runs.params) are variants: they are listed but never counted here."""
     out = {}
     for r in rows(con, "SELECT r.strategy_id, r.instrument, r.day, SUM(r.gross_pnl) pnl FROM runs r "
                        "JOIN strategies s ON s.id=r.strategy_id "
-                       "WHERE r.id IN (SELECT MAX(id) FROM runs GROUP BY strategy_id, instrument, day, executor) "
+                       "WHERE r.id IN (SELECT MAX(id) FROM runs WHERE COALESCE(params, '') IN ('', '{}') GROUP BY strategy_id, instrument, day, executor) "
                        "AND r.created >= COALESCE(s.code_edited_at, '') AND COALESCE(r.nearest, 1) = 1 "
                        "GROUP BY r.strategy_id, r.instrument, r.day"):
         s = out.setdefault(r["strategy_id"], {}).setdefault(
@@ -342,7 +346,7 @@ def strategy_stats(con):
         s["worst"] = r["pnl"] if s["worst"] is None else min(s["worst"], r["pnl"] or 0)
     for r in rows(con, "SELECT r.strategy_id, r.instrument, r.day, SUM(r.gross_pnl) pnl FROM runs r "
                        "JOIN strategies s ON s.id=r.strategy_id "
-                       "WHERE r.id IN (SELECT MAX(id) FROM runs GROUP BY strategy_id, instrument, day, executor) "
+                       "WHERE r.id IN (SELECT MAX(id) FROM runs WHERE COALESCE(params, '') IN ('', '{}') GROUP BY strategy_id, instrument, day, executor) "
                        "AND r.created >= COALESCE(s.code_edited_at, '') AND r.nearest = 0 "
                        "GROUP BY r.strategy_id, r.instrument, r.day"):
         s = out.setdefault(r["strategy_id"], {}).setdefault(

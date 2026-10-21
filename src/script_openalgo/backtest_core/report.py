@@ -95,8 +95,13 @@ def write_results(out_dir, day, trades, summary, log_lines):
             w = csv.DictWriter(f, fieldnames=list(dict.fromkeys(k for t in trades for k in t)), restval="")
             w.writeheader()
             w.writerows(trades)
+    params = {}
+    try:                                                   # options chosen for this run in the web app (STRATEGY_PARAMS)
+        params = json.loads(os.environ.get("STRATEGY_PARAMS") or "{}") or {}
+    except ValueError:
+        pass
     with open(os.path.join(out_dir, "summary.json"), "w") as f:
-        json.dump({"date": day.isoformat(), **summary}, f, indent=1)
+        json.dump({"date": day.isoformat(), **summary, **({"params": params} if params else {})}, f, indent=1)
     with open(os.path.join(out_dir, "log.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(log_lines))
 

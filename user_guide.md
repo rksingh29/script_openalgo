@@ -372,7 +372,7 @@ The **Signals** tab runs a strategy's real code and shows its orders as **signal
 2. Choose the mode:
    - **live (today, real time)**: candles and prices come from OpenAlgo while the market is open. Use it during market hours.
    - **replay a day**: pick a date that has complete cached data (Data tab), a **from** time and a **speed**. The strategy runs at full speed up to the from time (so its indicators and opening range are correct), then the chart builds up from that moment at the chosen speed (1x is real time, 60x turns an hour into a minute, "no pause" is instant).
-3. Optional: **parameters** for this session only, e.g. `CONFIRM_BARS=2` or `USE_REGIME_FILTER=true, ADX_THRESHOLD=25` (the strategy's UPPER_CASE constants; the file is not changed). Unknown names are rejected. The session list and header show the parameters used, so you can compare two replays of the same day.
+3. Optional: tick or change **Options** (see section 18) for this session only. Older note: **parameters** for this session only, e.g. `CONFIRM_BARS=2` or `USE_REGIME_FILTER=true, ADX_THRESHOLD=25` (the strategy's UPPER_CASE constants; the file is not changed). Unknown names are rejected. The session list and header show the parameters used, so you can compare two replays of the same day.
 4. Click **Start**. The session appears in the list; click it to see it. **Stop** ends it.
 
 What you see: the underlying's 1-minute candles, the strategy's own values drawn as lines (EMAs, VWAP, opening range high/low, Camarilla levels, the position's stop and target: whatever the strategy keeps; click a value under the chart to hide or show its line; values not on the price scale, such as RSI or ADX, are listed there too), markers for every signal (▲ CE buy, ▼ PE buy, ✕ exit, at the underlying's price when it fired), the signal table, the strategy's own log, and the paper P&L of closed signals.
@@ -383,3 +383,17 @@ What you see: the underlying's 1-minute candles, the strategy's own values drawn
 - The strategy itself never sends orders from this page; it is filled on paper at the current price so it keeps managing its position. If you act on an entry, act on its exit too: the page does not follow your real position.
 
 Up to 3 sessions can run at once. Sessions are jobs: they also appear in the Jobs tab, keep running if the web app restarts, and "Delete" there removes the session and its files.
+
+## 18. Strategy options per run (Signals tab and the strategy page)
+
+When you pick a strategy, an **Options** row shows its settings read from the strategy file:
+- yes/no settings (for example `USE_REGIME_FILTER`) and numbers that can be switched off ("0 = off", for example `VIX_NEAR_HIGH_PCT`, `CONFIRM_BARS`) are checkboxes; a ticked number also shows its value, which you can change;
+- the rest is under **More options**;
+- a value the instrument sets for itself is shown next to the name (for example `CONFIRM_BARS (BANKNIFTY: 0)`).
+
+Only the options you change are used, for that one run or session; the strategy file is not changed. "This run: ..." shows what will be sent, and **Reset to defaults** clears it.
+
+- **Signals tab**: the options apply to the replay or live session; the session list and header show them.
+- **Strategy page**: the options apply to **Run** and **Run range** (backtests). Such runs are labelled with their options in the runs table and the Results tab, and they are **not counted in the strategy's stats**, so a test with, say, the VIX filter off never mixes with the normal results. Use the runs-table filter "run with options" to see them.
+
+Signals sessions can be deleted: **Delete** on a finished session, or **Delete N finished** for all of them (running sessions are kept).

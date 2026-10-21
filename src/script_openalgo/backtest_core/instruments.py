@@ -170,3 +170,22 @@ def apply_strategy_overrides(strat, instrument, user_overrides=None):
         setattr(strat, k, v)
     for k, v in (user_overrides or {}).items():
         setattr(strat, k, v)
+    run_params = env_params()
+    for k, v in run_params.items():                        # options chosen for this run in the web app win
+        if not hasattr(strat, k):
+            raise SystemExit(f"unknown strategy parameter {k} (STRATEGY_PARAMS)")
+        orig.setdefault(k, getattr(strat, k))
+        setattr(strat, k, v)
+    strat._run_params = run_params
+
+
+def env_params():
+    """Strategy options chosen for one run in the web app: JSON in the STRATEGY_PARAMS environment variable."""
+    raw = os.environ.get("STRATEGY_PARAMS") or ""
+    if not raw.strip():
+        return {}
+    try:
+        d = json.loads(raw)
+    except ValueError:
+        raise SystemExit("STRATEGY_PARAMS is not valid JSON")
+    return {str(k): v for k, v in d.items()} if isinstance(d, dict) else {}

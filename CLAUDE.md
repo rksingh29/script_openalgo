@@ -17,6 +17,9 @@ Research, backtest and manage OpenAlgo option strategies against an OpenAlgo ser
 ## Signals tab
 `src/script_openalgo/signals.py` runs a strategy's real class as a job (kind `signal`): live (OpenAlgo SDK, real time) or replay (FakeClient on a cached day, full speed until `--from`, then `--speed`x). `snapshot()` records the numbers the strategy keeps on `self` (indicator lists -> latest value, dicts such as `levels`/`position` flattened) as `state` events for the chart's indicator lines and values panel. `SignalRecorder` turns every `placeorder()` into a signal event (paper fill at the current price) in `strategy_db/logs/<ws>/signals_<job>.jsonl`. Web app endpoints `/api/signals/*`; **Act** sends one live signal via `/api/v1/placeorder`, only in OpenAlgo Analyzer mode unless the setting `allow_live_orders` is on (typed LIVE confirmation).
 
+## Strategy options per run
+`GET /api/strategies/<id>/params` lists a strategy's simple UPPER_CASE constants (ast; bool -> checkbox, numbers whose comment says "0 = off" -> toggle + value), with the instrument's `strategy_overrides` value. The UI sends changed values as `params` ("NAME=value, ..."); Signals pass them as `--set`, backtests (Run / Run range) as the `STRATEGY_PARAMS` env var (JSON) which `instruments.apply_strategy_overrides` applies last. `report.write_results` stores them in summary.json, `runs.params` keeps them, and `strategy_stats` ignores runs with params.
+
 ## Rules that must not be broken
 - A backtest **imports and replays the real strategy class** (`Strategy(client, clock, sleeper)`); never re-implement a strategy for a backtest. All tunables are module-level constants.
 - No lookahead: FakeClient returns only completed bars; fills are the close of the last completed 1m bar. `verify.py` re-derives every fill from the candles.

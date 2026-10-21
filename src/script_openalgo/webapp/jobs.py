@@ -68,7 +68,7 @@ def running(con, kind=None):
     return db.rows(con, q, (kind,) if kind else ())
 
 
-def _launch(ws, kind, sid, label, cmd, meta=None):
+def _launch(ws, kind, sid, label, cmd, meta=None, extra_env=None):
     log_dir = os.path.join(LOG_DIR, ws)              # job ids repeat across workspaces, so logs are per workspace
     os.makedirs(log_dir, exist_ok=True)
     con = db.connect(ws)
@@ -81,6 +81,8 @@ def _launch(ws, kind, sid, label, cmd, meta=None):
     cmd = [c.replace("{JOB_ID}", str(jid)) for c in cmd]
     env = child_env(ws)
     env["JOB_ID"] = str(jid)
+    env.pop("STRATEGY_PARAMS", None)
+    env.update(extra_env or {})
     exit_file = lp[:-4] + ".exit"
     if os.path.exists(exit_file):
         os.remove(exit_file)
@@ -281,7 +283,8 @@ def _resume(ws, j):
             if n > MAX_RESUMES:
                 db.set_status(con, j["strategy_id"], "failed", "", f"interrupted {n} times; not resuming again")
                 return
-            new = start_test(ws, j["strategy_id"], None, meta.get("instrument", "NIFTY"), resume=True)
+            new = start_test(ws, j["strategy_id"], None, meta.get("instrument", "NIFTY"), resume=True,
+                             params=meta.get("params"))
         elif j["kind"] == "research":
             added = con.execute("SELECT COUNT(*) FROM research_log WHERE job_id=? AND action='added'",
                                 (j["id"],)).fetchone()[0]
@@ -421,7 +424,15 @@ def start_research(ws, count, mode):
 
 
 # ---------------- strategy test pipeline (orchestrator) ----------------
-def start_test(ws, sid, day=None, instrument="NIFTY", answer=None, resume=False, queued_start=False):
+def _params_env(params):
+    return {"STRATEGY_PARAMS": json.dumps(params)} if params else {}
+
+
+def _params_label(params):
+    return f" [{', '.join(f'{k}={v}' for k, v in params.items())}]" if params else ""
+
+
+def start_test(ws, sid, day=None, instrument="NIFTY", answer=None, resume=False, queued_start=False, params=None):
     con = db.connect(ws)
     if running(con, "test"):
         if answer is None and not resume and not queued_start:        # a fresh manual run waits its turn
@@ -429,7 +440,7 @@ def start_test(ws, sid, day=None, instrument="NIFTY", answer=None, resume=False,
             if s and s["status"] == "in_progress":
                 con.close()
                 raise RuntimeError("this strategy is already being tested")
-            db.set_setting(con, f"req_{sid}", json.dumps({"day": day, "instrument": instrument}))
+            db.set_setting(con, f"req_{sid}", json.dumps({"day": day, "instrument": instrument, "params": params or {}}))
             db.set_status(con, sid, "queued", "", "queued: starts when the running test finishes")
             con.close()
             return None
@@ -471,8 +482,9 @@ def start_test(ws, sid, day=None, instrument="NIFTY", answer=None, resume=False,
         cmd += ["--spec", sp]
     db.set_status(con, sid, "in_progress", "starting", "")
     con.close()
-    return _launch(ws, "test", sid, f"test {slug} {instrument} {day or 'prev day'}", cmd,
-                   meta={"slug": slug, "instrument": instrument, "resumed": bool(resume)})
+    return _launch(ws, "test", sid, f"test {slug} {instrument} {day or 'prev day'}{_params_label(params)}", cmd,
+                   meta={"slug": slug, "instrument": instrument, "resumed": bool(resume), "params": params or {}},
+                   extra_env=_params_env(params))
 
 
 # ---------------- multi-day runs and backfill ----------------
@@ -511,7 +523,8 @@ def _multiday_callbacks(ws, sid, slug, instrument):
                 mf = _manifest(ws, instrument, r["day"]) or {}
                 db.add_run(con, sid, instrument, r["day"], {"trades": r["trades"], "gross_pnl": r["gross_pnl"],
                            "win_rate": r["win_rate"], "max_drawdown": r["max_drawdown"]}, r["verdict"], r["result_dir"], jid,
-                           code_hash=out.get("code_hash"), dte=mf.get("days_to_expiry"), nearest=mf.get("nearest", True))
+                           code_hash=out.get("code_hash"), dte=mf.get("days_to_expiry"), nearest=mf.get("nearest", True),
+                           params=(r.get("summary") or {}).get("params"))
             a = out["aggregate"]
             con.execute("UPDATE jobs SET note=? WHERE id=?", (f"{a['days']} days, P&L {a['total_pnl']:+.0f}, avg/day {a['avg_per_day']}", jid))
             con.execute("UPDATE strategies SET status='tested', phase='', status_note='', updated=? WHERE id=?", (db.now(), sid))
@@ -524,7 +537,7 @@ def _multiday_callbacks(ws, sid, slug, instrument):
     return on_line, on_done
 
 
-def start_multiday(ws, sid, instrument="NIFTY", start=None, end=None, last_days=None, allow_far=False, workers=2):
+def start_multiday(ws, sid, instrument="NIFTY", start=None, end=None, last_days=None, allow_far=False, workers=2, params=None):
     con = db.connect(ws)
     if running(con, "multiday") or running(con, "test"):
         con.close()
@@ -548,8 +561,8 @@ def start_multiday(ws, sid, instrument="NIFTY", start=None, end=None, last_days=
         cmd.append("--allow-far")
     db.set_status(con, sid, "in_progress", "multi-day", "")
     con.close()
-    return _launch(ws, "multiday", sid, f"multi-day {s['slug']} {instrument}", cmd,
-                   meta={"slug": s["slug"], "instrument": instrument})
+    return _launch(ws, "multiday", sid, f"multi-day {s['slug']} {instrument}{_params_label(params)}", cmd,
+                   meta={"slug": s["slug"], "instrument": instrument, "params": params or {}}, extra_env=_params_env(params))
 
 
 def start_backfill(ws, instrument):
@@ -639,7 +652,8 @@ class AutoRunner(threading.Thread):
                         st = con.execute("SELECT status FROM strategies WHERE id=?", (sid,)).fetchone()
                         if st and st["status"] == "queued":
                             con.close()
-                            start_test(ws, sid, req.get("day"), req.get("instrument") or "NIFTY", queued_start=True)
+                            start_test(ws, sid, req.get("day"), req.get("instrument") or "NIFTY", queued_start=True,
+                                       params=req.get("params") or None)
                             con = db.connect(ws)
                             break
                 waiting =con.execute("SELECT 1 FROM strategies WHERE status='waiting'").fetchone()

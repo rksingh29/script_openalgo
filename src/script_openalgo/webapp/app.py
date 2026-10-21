@@ -315,6 +315,79 @@ def instruments_delete(name):
     return jsonify({"removed": name, "builtin_restored": name in instruments.INSTRUMENTS})
 
 
+# ---------------- strategy options (module-level UPPER_CASE constants) chosen per run in the UI ----------------
+HIDDEN_PARAMS = {"API_KEY", "HOST", "STRATEGY", "UNDERLYING", "INDEX_EXCHANGE", "OPT_EXCHANGE", "PRODUCT", "TIMEFRAME",
+                 "BAR_MINUTES", "HISTORY_SOURCE", "SESSION_START", "VIX_SYMBOL", "VIX_EXCHANGE", "POLL_SEC"}
+
+
+def strategy_params(slug):
+    """[{name, value, type, comment, toggle}] for the strategy's simple module constants (bool/int/float/str), in file
+    order. `toggle`: a number whose comment says "0 = off" (shown as a checkbox + value)."""
+    import ast
+    path = os.path.join(db.STRATEGIES_DIR, slug + ".py")
+    src = open(path, encoding="utf-8").read()
+    lines = src.splitlines()
+    out = []
+    for node in ast.parse(src).body:
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)):
+            continue
+        name = node.targets[0].id
+        if not name.isupper() or name in HIDDEN_PARAMS or not isinstance(node.value, ast.Constant):
+            continue
+        v = node.value.value
+        if not isinstance(v, (bool, int, float, str)):
+            continue
+        line = lines[node.lineno - 1]
+        comment = line.split("#", 1)[1].strip().rstrip("=").strip() if "#" in line else ""
+        k = node.lineno                                             # continuation comment lines right below
+        while k < len(lines) and lines[k].strip().startswith("#") and "----" not in lines[k] and "====" not in lines[k]:
+            comment += " " + lines[k].strip().lstrip("#").strip()
+            k += 1
+        typ = "bool" if isinstance(v, bool) else "int" if isinstance(v, int) else "float" if isinstance(v, float) else "str"
+        out.append({"name": name, "value": v, "type": typ, "comment": comment[:300],
+                    "toggle": typ in ("int", "float") and "0 = off" in comment})
+    return out
+
+
+def parse_run_params(slug, text):
+    """'NAME=value, ...' from the UI -> dict, checked against the strategy file. Raises ValueError with a message."""
+    from script_openalgo.signals import parse_params
+    params = parse_params(text or "")
+    known = {p["name"] for p in strategy_params(slug)}
+    unknown = [k for k in params if k not in known]
+    if unknown:
+        raise ValueError(f"{', '.join(unknown)}: not an option of {slug}")
+    return params
+
+
+@app.get("/api/strategies/<int:sid>/params")
+def strategy_params_api(sid):
+    con = conn()
+    s = con.execute("SELECT slug FROM strategies WHERE id=?", (sid,)).fetchone()
+    con.close()
+    if not s or not os.path.exists(os.path.join(db.STRATEGIES_DIR, s["slug"] + ".py")):
+        return err("strategy or its code file not found", 404)
+    inst = (request.args.get("instrument") or "").upper()
+    ov = (instruments.INSTRUMENTS.get(inst) or {}).get("strategy_overrides", {}) if inst else {}
+    items = strategy_params(s["slug"])
+    for p in items:
+        if p["name"] in ov:
+            p["instrument_value"] = ov[p["name"]]                   # e.g. BANKNIFTY sets CONFIRM_BARS=0
+    return jsonify({"items": items, "instrument": inst})
+
+
+@app.post("/api/signals/clear")
+def signals_clear():
+    """Delete every finished signal session (with its log and events files). Running sessions are kept."""
+    con = conn()
+    rows = con.execute("SELECT * FROM jobs WHERE kind='signal' AND status IN ('ok', 'failed', 'cancelled', 'interrupted')").fetchall()
+    for j in rows:
+        _delete_job(con, j)
+    con.commit()
+    con.close()
+    return jsonify({"deleted": len(rows)})
+
+
 # ---------------- signals: run a strategy live or as a replay; its orders become signals; "act" sends one ----------------
 MAX_SIGNAL_SESSIONS = 3
 
@@ -405,15 +478,10 @@ def signals_start():
         return err("strategy not found or its code file is missing")
     if n_run >= MAX_SIGNAL_SESSIONS:
         return err(f"{n_run} signal sessions are running; stop one first", 409)
-    from script_openalgo.signals import parse_params
     try:
-        params = parse_params(b.get("params") or "")
+        params = parse_run_params(s["slug"], b.get("params") or "")
     except ValueError as e:
-        return err(f"parameters: {e}")
-    code = open(os.path.join(db.STRATEGIES_DIR, s["slug"] + ".py"), encoding="utf-8").read()
-    unknown = [k for k in params if not re.search(rf"^{k}\s*=", code, re.M)]
-    if unknown:
-        return err(f"{', '.join(unknown)}: not a parameter of {s['slug']} (module-level UPPER_CASE constants only)")
+        return err(f"options: {e}")
     events = os.path.join(jobs.LOG_DIR, ws(), "signals_{JOB_ID}.jsonl")
     cmd = [sys.executable, "-u", "-m", "script_openalgo.signals", "--strategy", s["slug"], "--instrument", inst, "--events", events]
     if params:
@@ -540,15 +608,26 @@ def run_strategy(sid):
     if inst not in instruments.INSTRUMENTS:
         return err("unknown instrument")
     day = b.get("date") or None
+    con = conn()
+    srow = con.execute("SELECT slug FROM strategies WHERE id=?", (sid,)).fetchone()
+    con.close()
+    params = None
+    if (b.get("params") or "").strip():
+        if not srow or not os.path.exists(os.path.join(db.STRATEGIES_DIR, srow["slug"] + ".py")):
+            return err("strategy code file not found; options need the code file")
+        try:
+            params = parse_run_params(srow["slug"], b["params"]) or None
+        except ValueError as e:
+            return err(f"options: {e}")
     if b.get("from") or b.get("to") or b.get("days"):          # several days at once (no Claude involved)
         try:
             jid = jobs.start_multiday(ws(), sid, inst, b.get("from") or None, b.get("to") or None,
-                                      int(b["days"]) if b.get("days") else None, bool(b.get("allow_far")))
+                                      int(b["days"]) if b.get("days") else None, bool(b.get("allow_far")), params=params)
         except RuntimeError as e:
             return err(str(e), 409)
         return jsonify({"job_id": jid})
     try:
-        jid = jobs.start_test(ws(), sid, day, inst)
+        jid = jobs.start_test(ws(), sid, day, inst, params=params)
     except RuntimeError as e:
         return err(str(e), 409)
     return jsonify({"job_id": jid, "queued": jid is None})
@@ -566,7 +645,8 @@ def answer(jid):
         return err("job is not waiting for input", 409)
     cmd_inst = "NIFTY"
     try:
-        new = jobs.start_test(ws(), j["strategy_id"], None, cmd_inst, answer=text)
+        new = jobs.start_test(ws(), j["strategy_id"], None, cmd_inst, answer=text,
+                              params=json.loads(j["meta"] or "{}").get("params") or None)
     except RuntimeError as e:
         return err(str(e), 409)
     return jsonify({"job_id": new})

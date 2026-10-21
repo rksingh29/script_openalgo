@@ -240,3 +240,4 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [ ] VIX filter robustness: backfill 60+ days, sweep 5-30 %, choose on older days and check on newer ones; consider a range that ignores the opening minutes
 - [x] parabolic_sar_flip_scalp: CONFIRM_BARS=2 default as well (user decision 2026-10-21, against the 37-day comparison; revisit after more days)
 - [x] BANKNIFTY: CONFIRM_BARS=0 for parabolic_sar_flip_scalp via instruments.py strategy_overrides (user decision 2026-10-21); fixed backtest_parabolic_sar_flip_scalp.py (old template line ignored instrument overrides)
+- [x] Strategy options per run in the UI (Signals + strategy page Run/Run range): checkboxes for yes/no and '0 = off' settings, values editable, instrument defaults shown; runs with options labelled and excluded from stats (runs.params); Signals sessions deletable (one / all finished) (2026-10-21)
