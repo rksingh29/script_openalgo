@@ -33,6 +33,10 @@ def main():
     r.add_argument("slug")
     r.add_argument("name")
     r.add_argument("--family", default="user")
+    d = sub.add_parser("dedupe", help="delete older runs identical to the newest run of the same day")
+    d.add_argument("--include-changed", action="store_true", help="also older runs with a different result (history)")
+    d.add_argument("--delete-files", action="store_true", help="also delete their result folders")
+    d.add_argument("--dry-run", action="store_true")
     c = sub.add_parser("count-new")
     c.add_argument("--job", type=int, required=True)
     args = ap.parse_args()
@@ -53,6 +57,12 @@ def main():
         else:
             res = db.merge_into(con, args.id, spec, job_id=args.job)
         print(json.dumps(res))
+    elif args.cmd == "dedupe":
+        if args.dry_run:
+            ids, counts = db.find_duplicate_runs(con, args.include_changed)
+            print(json.dumps({"would_delete": len(ids), **counts}))
+        else:
+            print(json.dumps(db.dedupe_runs(con, args.include_changed, args.delete_files)))
     elif args.cmd == "register":
         print(json.dumps(db.register_user_strategy(con, args.slug, args.name, args.family)))
     else:

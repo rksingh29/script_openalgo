@@ -13,6 +13,9 @@ import os
 import re
 import shutil
 import sys
+from datetime import date
+
+import pandas as pd
 
 from flask import Flask, abort, jsonify, request, send_from_directory
 
@@ -596,6 +599,7 @@ def signals_group_view(group):
     members, bars, vix, start, signals = [], [], [], {}, []
     for j in js:
         ev = _signal_events(j)
+        scores = _signal_scores(j, ev)
         meta = json.loads(j["meta"] or "{}")
         acted = meta.get("acted", {})
         b = [e for e in ev if e["type"] == "bar"]
@@ -604,7 +608,8 @@ def signals_group_view(group):
             vix = [{"t": e["t"], "c": e["c"]} for e in ev if e["type"] == "vix"]
             start = next((e for e in ev if e["type"] == "start"), {})
         end = next((e for e in reversed(ev) if e["type"] in ("end", "error")), None)
-        sig = [dict(e, acted=acted.get(str(e["id"])), job_id=j["id"], slug=meta.get("slug"), name=j["name"]) for e in ev if e["type"] == "signal"]
+        sig = [dict(e, acted=acted.get(str(e["id"])), score=scores.get(str(e["id"])), job_id=j["id"], slug=meta.get("slug"), name=j["name"])
+               for e in ev if e["type"] == "signal"]
         signals += sig
         members.append({"id": j["id"], "slug": meta.get("slug"), "name": j["name"], "status": j["status"], "params": meta.get("params") or {},
                         "clock": next((e["t"] for e in reversed(ev) if e["type"] == "clock"), None), "end": end,
@@ -636,13 +641,61 @@ def signals_group_delete(group):
     return jsonify({"deleted": len(js)})
 
 
+def _signal_scores(j, ev):
+    """Journal score of every BUY signal of a session, computed once and kept in the job meta. Replay sessions are scored
+    against journal trades of EARLIER days only; live sessions use the session's own candles and VIX for the features."""
+    from script_openalgo import journal
+    from script_openalgo.backtest_core import data_loader as dl
+    meta = json.loads(j["meta"] or "{}")
+    scores = dict(meta.get("scores") or {})
+    todo = [e for e in ev if e["type"] == "signal" and e.get("action") == "BUY" and str(e["id"]) not in scores]
+    if not todo:
+        return scores
+    inst = meta.get("instrument") or "NIFTY"
+    cfg = instruments.get(inst)
+    cache = db.ws_paths(ws())[1]
+    frames = None
+    day = meta.get("date")
+    if meta.get("mode") == "live":
+        day = next((e.get("date") for e in ev if e["type"] == "start"), None) or db.now()[:10]
+
+        def frame(rows, ohlc):
+            if not rows:
+                return None
+            idx = pd.to_datetime([f"{day} {r['t']}" for r in rows])
+            cols = {k: [r[k] for r in rows] for k in ("o", "h", "l", "c")} if ohlc else {k: [r["c"] for r in rows] for k in ("o", "h", "l", "c")}
+            return pd.DataFrame({"open": cols["o"], "high": cols["h"], "low": cols["l"], "close": cols["c"],
+                                 "volume": 0, "oi": 0}, index=idx)
+        frames = {cfg["index_symbol"]: frame([e for e in ev if e["type"] == "bar"], True),
+                  "INDIAVIX": frame([e for e in ev if e["type"] == "vix"], False)}
+    try:
+        mf = dl.load_manifest(date.fromisoformat(day), inst) or {}
+    except (TypeError, ValueError):
+        mf = {}
+    con = conn()
+    try:
+        for e in todo:
+            feats = journal.signal_features(cache, inst, day, e["t"], e["symbol"], mf.get("days_to_expiry"), frames)
+            scores[str(e["id"])] = journal.score_signal(con, meta.get("slug"), inst, day, "CE" if e["symbol"].endswith("CE") else "PE", feats)
+        m = json.loads(con.execute("SELECT meta FROM jobs WHERE id=?", (j["id"],)).fetchone()["meta"] or "{}")
+        m["scores"] = scores
+        con.execute("UPDATE jobs SET meta=? WHERE id=?", (json.dumps(m), j["id"]))
+        con.commit()
+    except Exception as e:                                    # a score problem must never break the signals page
+        scores["_error"] = str(e)[:200]
+    finally:
+        con.close()
+    return scores
+
+
 @app.get("/api/signals/<int:jid>")
 def signals_view(jid):
     j = _signal_job(jid)
     if not j:
         return err("not found", 404)
     ev = _signal_events(j)
-    meta = json.loads(j["meta"] or "{}")
+    scores = _signal_scores(j, ev)
+    meta = json.loads(_signal_job(jid)["meta"] or "{}")
     acted = meta.get("acted", {})
     end = next((e for e in reversed(ev) if e["type"] in ("end", "error")), None)
     log_tail = ""
@@ -655,7 +708,7 @@ def signals_view(jid):
                     "bars": [e for e in ev if e["type"] == "bar"],
                     "vix": [{"t": e["t"], "c": e["c"]} for e in ev if e["type"] == "vix"],
                     "states": [{"t": e["t"], "v": e["v"]} for e in ev if e["type"] == "state"],
-                    "signals": [dict(e, acted=acted.get(str(e["id"]))) for e in ev if e["type"] == "signal"],
+                    "signals": [dict(e, acted=acted.get(str(e["id"])), score=scores.get(str(e["id"]))) for e in ev if e["type"] == "signal"],
                     "logs": [e for e in ev if e["type"] == "log"][-80:], "end": end, "log_tail": log_tail})
 
 

@@ -413,6 +413,31 @@ def delete_run(con, run_id, delete_dir=False):
     return True
 
 
+def find_duplicate_runs(con, include_changed=False):
+    """Older runs of the same strategy, instrument, day, executor and options as a newer run. By default only IDENTICAL
+    ones (same trades and gross P&L as the newest): removing them loses nothing, because the stats use the newest run.
+    include_changed=True also returns older runs with a different result (earlier code versions: history)."""
+    groups = {}
+    for r in rows(con, "SELECT id, strategy_id, instrument, day, executor, params, trades, gross_pnl FROM runs ORDER BY id DESC"):
+        groups.setdefault((r["strategy_id"], r["instrument"], r["day"], r["executor"] or "option", r["params"] or ""), []).append(r)
+    same, changed = [], []
+    for g in groups.values():
+        newest = g[0]
+        for r in g[1:]:
+            ident = r["trades"] == newest["trades"] and abs((r["gross_pnl"] or 0) - (newest["gross_pnl"] or 0)) < 0.01
+            (same if ident else changed).append(r["id"])
+    return same + (changed if include_changed else []), {"identical": len(same), "different_result": len(changed)}
+
+
+def dedupe_runs(con, include_changed=False, delete_files=False):
+    """Delete duplicate runs (see find_duplicate_runs). Kept result folders are remembered so the disk sync does not
+    import them again."""
+    ids, counts = find_duplicate_runs(con, include_changed)
+    for rid in ids:
+        delete_run(con, rid, delete_dir=delete_files)
+    return {"deleted": len(ids), **counts}
+
+
 # ---------------- settings ----------------
 def get_setting(con, key, default=None):
     r = con.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()

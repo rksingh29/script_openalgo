@@ -247,3 +247,6 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [ ] Journal: a web app view (buckets per strategy) and including live Signals sessions once real live days exist
 - [x] Journal features pluggable (feature groups + version, JSON storage, auto-recompute) with volume, OI/PCR and premium level; edge report with Benjamini-Hochberg q-values (2026-10-23: 467 tests, 0 candidates)
 - [ ] Journal score for new signals (similar-trade expectancy now, a model later) shown in the Signals table
+- [x] Journal score 0-100 + confidence per BUY signal in the Signals tab (earlier days only; live from session candles) (2026-10-23)
+- [x] db dedupe: identical older runs removed (repo 106, deployment 282; databases backed up in backups/default_before_dedupe_20261023_193029.db); older runs with a different result kept
+- [ ] Signals journal score: check on a real live session during market hours

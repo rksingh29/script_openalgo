@@ -566,6 +566,54 @@ def similar(rows, ctx, k=15):
     return sorted(rows, key=dist)[:k], feats
 
 
+# ---------------- journal score for a new signal ----------------
+SCORE_K = 20          # similar past trades used
+SCORE_PRIOR = 10      # weight of the strategy's overall result (shrinks the score when the similar trades are few)
+
+
+def signal_features(cache, instrument, day, entry_time, symbol, dte=None, frames=None):
+    """Features of a signal at `entry_time` on `day`, like a journal trade's. `frames` ({name: DataFrame}) replaces the cache
+    for live sessions (the session's own underlying / VIX candles); features whose data is missing are simply absent."""
+    from script_openalgo.backtest_core import instruments
+    cfg = instruments.get(instrument)
+    base = make_loader(cache)
+
+    def load(name, d, instrument=None):
+        if frames is not None and name in frames:
+            return frames[name]
+        return base(name, d, instrument=instrument)
+    ctx = Ctx(cache, instrument, cfg, day, entry_time, {"symbol": symbol}, {"dte": dte}, load)
+    return {k: v for k, v in compute_features(ctx).items() if not k.startswith("_error")}
+
+
+def score_signal(con, slug, instrument, day, side, feats, k=SCORE_K, prior=SCORE_PRIOR):
+    """0-100 journal score of a signal: win rate of the k most similar EARLIER trades of the same strategy (same instrument
+    when it has enough trades), shrunk toward the strategy's overall win rate; plus average net and a confidence label."""
+    hist = [r for r in load_rows(con, slug, instrument) if r["day"] < day]
+    scope = instrument
+    if len(hist) < 2 * k:                                    # too few on this instrument: use the strategy everywhere
+        hist = [r for r in load_rows(con, slug) if r["day"] < day]
+        scope = "all instruments"
+    same_side = [r for r in hist if r["side"] == side]
+    if len(same_side) >= k:
+        hist = same_side
+    if not hist:
+        return {"score": None, "confidence": "none", "note": "no earlier journal trades for this strategy"}
+    usable = {f: v for f, v in feats.items() if isinstance(v, (int, float)) and f != "u_price"}
+    top, used = similar(hist, usable, min(k, len(hist)))
+    base_w = sum(1 for r in hist if (r["net"] or 0) > 0) / len(hist)
+    w = sum(1 for r in top if (r["net"] or 0) > 0)
+    n = len(top)
+    score = round((w + prior * base_w) / (n + prior) * 100)
+    avg = sum(r["net"] or 0 for r in top) / n if n else 0
+    days = len({r["day"] for r in hist})
+    conf = "high" if len(hist) >= 300 and days >= 60 else "medium" if len(hist) >= 100 and days >= 25 else "low"
+    return {"score": score, "confidence": conf, "similar": n, "similar_wins": w, "avg_net_similar": round(avg, 1),
+            "strategy_win_rate": round(base_w * 100, 1), "history_trades": len(hist), "history_days": days, "scope": scope,
+            "features_used": len(used), "note": f"{w}/{n} similar earlier trades won (strategy overall {base_w * 100:.0f}%, "
+                                                 f"{len(hist)} trades / {days} days, {scope})"}
+
+
 # ---------------- edge report ----------------
 def _bh(pvals):
     """Benjamini-Hochberg q-values (false discovery rate) for a list of p-values."""

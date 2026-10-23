@@ -365,6 +365,14 @@ function optionsPanel(sid, getInst, chosen) {
 function sigState() {
   return st.sig = st.sig || { form: { ids: [], instrument: "NIFTY", mode: "live", date: "", time: "09:15", speed: "30", optsBy: {} }, sel: null, view: null, group: null, sessions: null, mode: null, modeAt: 0, hide: {}, ind: null };
 }
+function scoreCell(s) {   // journal score of a BUY signal: 0-100 + confidence, tooltip explains it
+  const sc = s.score;
+  if (s.action !== "BUY" || !sc) return h("td", {}, "");
+  if (sc.score == null) return h("td", { class: "small mute", title: sc.note || "" }, "–");
+  const col = sc.score >= 60 ? "pos" : sc.score <= 40 ? "neg" : "";
+  return h("td", { title: `Journal score ${sc.score}/100 (${sc.confidence} confidence): ${sc.note}. Average net of the similar trades: ${sc.avg_net_similar}. Based on ${sc.features_used} features. Earlier days only; not advice.` },
+    h("b", { class: col }, sc.score), h("span", { class: "mute small" }, " " + sc.confidence));
+}
 const GROUP_COLORS = ["#2457d6", "#c0262d", "#0b7a46", "#b8860b", "#8e44ad", "#d35400", "#16a085", "#c2185b"];
 async function loadSignals() {
   const S = sigState();
@@ -553,7 +561,7 @@ function signalsView() {
     const live = v.meta.mode === "live", p = sigPnl(v.signals);
     const rows = v.signals.slice().reverse().map(s => h("tr", {}, h("td", {}, "#" + s.id), h("td", {}, s.t), h("td", {}, h("b", { class: s.action === "BUY" ? (/CE$/.test(s.symbol) ? "pos" : "neg") : "" }, s.action)),
       h("td", {}, s.symbol), h("td", {}, s.qty), h("td", {}, s.price ?? "–"), h("td", { class: "small mute" }, s.underlying ?? ""),
-      h("td", { class: "small mute" }, vixAt(v, s.t)), h("td", {}, actBtn(s, v.id, v.status === "running", live))));
+      h("td", { class: "small mute" }, vixAt(v, s.t)), scoreCell(s), h("td", {}, actBtn(s, v.id, v.status === "running", live))));
     detail = h("div", { class: "card" },
       h("div", { class: "row" }, h("b", {}, `#${v.id} ${v.meta.slug} · ${v.meta.instrument} · ${live ? "LIVE" : "replay " + v.meta.date}`),
         v.meta.params && Object.keys(v.meta.params).length ? h("span", { class: "chip" }, paramsText(v.meta.params)) : null,
@@ -565,7 +573,7 @@ function signalsView() {
       v.log_tail ? h("pre", { class: "small" }, v.log_tail) : null,
       sigChart(v), sigValues(v), legend,
       h("h4", {}, `Signals (${v.signals.length})`),
-      v.signals.length ? h("table", {}, h("thead", {}, h("tr", {}, ["#", "Time", "Action", "Symbol", "Qty", "Price", "Underlying", "VIX", ""].map(t => h("th", {}, t)))), h("tbody", {}, rows)) : h("div", { class: "mute small" }, "No signal yet."),
+      v.signals.length ? h("table", {}, h("thead", {}, h("tr", {}, ["#", "Time", "Action", "Symbol", "Qty", "Price", "Underlying", "VIX", "Score", ""].map(t => h("th", { title: t === "Score" ? "journal score 0-100: how similar earlier trades of this strategy did (hover a score for details)" : "" }, t)))), h("tbody", {}, rows)) : h("div", { class: "mute small" }, "No signal yet."),
       h("h4", {}, "Strategy log"), h("pre", { class: "small", style: "max-height:260px;overflow:auto" }, v.logs.slice().reverse().map(l => `${l.t} | ${l.msg}`).join("\n") || "(empty)"));
   }
   const G = S.group;
@@ -587,7 +595,7 @@ function signalsView() {
     const total = G.members.reduce((a, m) => a + sigPnl(sigs.filter(s => s.job_id === m.id)).pnl, 0);
     const rows = sigs.slice().reverse().map(s => h("tr", {}, h("td", {}, h("b", { style: `color:${s.color}` }, s.tag)), h("td", { class: "small" }, s.name || s.slug), h("td", {}, s.t),
       h("td", {}, h("b", { class: s.action === "BUY" ? (/CE$/.test(s.symbol) ? "pos" : "neg") : "" }, s.action)), h("td", {}, s.symbol), h("td", {}, s.qty), h("td", {}, s.price ?? "–"),
-      h("td", { class: "small mute" }, s.underlying ?? ""), h("td", { class: "small mute" }, vixAt(cv, s.t)),
+      h("td", { class: "small mute" }, s.underlying ?? ""), h("td", { class: "small mute" }, vixAt(cv, s.t)), scoreCell(s),
       h("td", {}, actBtn(s, s.job_id, tags[s.job_id].m.status === "running", live))));
     detail = h("div", { class: "card" },
       h("div", { class: "row" }, h("b", {}, `${G.members.length} strategies · ${G.meta.instrument} · ${live ? "LIVE" : "replay " + G.meta.date + " from " + (G.meta.start || "open") + " ×" + G.meta.speed}`),
@@ -596,7 +604,7 @@ function signalsView() {
       h("div", { class: "small" }, h("span", { class: "mute" }, "Indicator lines and values of "), h("b", { style: `color:${tags[S.ind].color}` }, `${tags[S.ind].tag} ${indM.name || indM.slug}`), h("span", { class: "mute" }, " (choose another in the table above)")),
       sigValues(cv), legend, h("div", { class: "mute small" }, "Markers carry the strategy letter (A, B, C…) in its colour."),
       h("h4", {}, `Signals (${sigs.length})`),
-      sigs.length ? h("table", {}, h("thead", {}, h("tr", {}, ["", "Strategy", "Time", "Action", "Symbol", "Qty", "Price", "Underlying", "VIX", ""].map(t => h("th", {}, t)))), h("tbody", {}, rows)) : h("div", { class: "mute small" }, "No signal yet."),
+      sigs.length ? h("table", {}, h("thead", {}, h("tr", {}, ["", "Strategy", "Time", "Action", "Symbol", "Qty", "Price", "Underlying", "VIX", "Score", ""].map(t => h("th", { title: t === "Score" ? "journal score 0-100: how similar earlier trades of this strategy did (hover a score for details)" : "" }, t)))), h("tbody", {}, rows)) : h("div", { class: "mute small" }, "No signal yet."),
       h("h4", {}, `Log of ${tags[S.ind].tag} ${indM.name || indM.slug}`), h("pre", { class: "small", style: "max-height:260px;overflow:auto" }, indM.logs.slice().reverse().map(l => `${l.t} | ${l.msg}`).join("\n") || "(empty)"));
   }
   return h("div", {}, modeBanner, form, list, detail);
