@@ -212,5 +212,9 @@ if __name__ == "__main__":
         _n = db.sync_from_disk(_c)
         _c.close()
         print(f"Web app data updated: {_n['registered']} strategies registered, {_n['runs_imported']} results imported.")
+        from script_openalgo import journal
+        _j = journal.update_quietly()
+        if _j:
+            print(f"Trade journal: {_j['trades_added']} trades added ({_j['trades_total']} in total).")
     except Exception as e:                              # never let this hide the results printed above
         print(f"(could not update the web app database: {e})")

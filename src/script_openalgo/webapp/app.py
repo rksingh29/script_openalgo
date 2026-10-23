@@ -867,7 +867,10 @@ def sync_disk():
     """Re-read strategy files and result folders from the workspace into the database (e.g. after command-line runs)."""
     con = conn()
     try:
-        return jsonify(db.sync_from_disk(con, db.ws_paths()[1]))
+        out = db.sync_from_disk(con, db.ws_paths()[1])
+        from script_openalgo import journal
+        j = journal.update_quietly(con)                      # keep the trade journal in step with the runs
+        return jsonify(dict(out, journal_trades_added=(j or {}).get("trades_added", 0)))
     finally:
         con.close()
 

@@ -71,6 +71,11 @@ def sync_assets():
         text = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("User decision:"))
         with open(os.path.join(skill_dst, "knowledge", name), "w", encoding="utf-8", newline="\n") as out:
             out.write(text + "\n")
+    for extra in ("trade_journal",):                  # further skills: SKILL.md only (no user data)
+        src = os.path.join(HERE, ".claude", "skills", extra, "SKILL.md")
+        if os.path.exists(src):
+            os.makedirs(os.path.join(ASSETS, "skills", extra), exist_ok=True)
+            shutil.copy(src, os.path.join(ASSETS, "skills", extra, "SKILL.md"))
     os.makedirs(os.path.join(ASSETS, "strategies"), exist_ok=True)
     n = 0
     for f in glob.glob(os.path.join(HERE, "strategies", "*.py")):
@@ -78,7 +83,7 @@ def sync_assets():
             shutil.copy(f, os.path.join(ASSETS, "strategies", os.path.basename(f)))
             n += 1
     write_strategy_meta()
-    say(f"[sync]   assets: {len(glob.glob(os.path.join(ASSETS, 'agents', '*.md')))} agents, 1 skill + "
+    say(f"[sync]   assets: {len(glob.glob(os.path.join(ASSETS, 'agents', '*.md')))} agents, {len(os.listdir(os.path.join(ASSETS, 'skills')))} skills + "
         f"{len(glob.glob(os.path.join(skill_dst, 'knowledge', '*.md')))} knowledge files, {n} example strategies")
 
 

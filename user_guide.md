@@ -417,3 +417,17 @@ Running the same day again adds a new run; the strategy's numbers always use onl
 - **Remove N superseded older runs**: older runs of the same day whose result differs (usually made with an earlier version of the code). They are kept unless you remove them here.
 
 Both ask, like every delete, whether to remove the result folders on disk too.
+
+## 21. Trade journal: learn from every run
+
+Every test and multi-day run now also fills a **trade journal**: one row per trade with what the market looked like at the moment of entry (India VIX level, where VIX was in its range so far that day, VIX change over 15/30 min; the underlying's move since the open, where it was in its day range, its 15/30/60-minute move and ATR; the opening gap, time of day, weekday, days to expiry) and what happened (P&L, win/loss, how long it was held, why it exited, the best and worst option P&L while held). Only the newest normal-settings run of each day counts, so re-runs do not duplicate.
+
+From PowerShell (in the workspace folder, or add `--home <folder>`):
+```
+script-openalgo journal build                                   # catch up (also runs by itself after every test)
+script-openalgo journal query --strategy parabolic_sar_flip_scalp --by vix_pos
+script-openalgo journal query --strategy opening_range_breakout_orb --from 09:15 --to 10:30 --by u_ret30_pct
+script-openalgo journal similar --strategy parabolic_sar_flip_scalp --instrument NIFTY --side PE --time 12:05 --vix 16.85 --vix-pos 50 --u-day-pos 15
+script-openalgo journal export --out journal.csv                 # open in Excel
+```
+In Claude Code, ask in plain words ("would the 12:05 PE from Parabolic SAR today have been a good trade by history?", "under which VIX conditions does ORB lose?"): the **trade_journal** skill runs these queries and reports the evidence with its sample size. It never places orders. Few trades = weak evidence: the output marks anything under 30 trades as LOW SAMPLE and shows a 95% range for the win rate.

@@ -14,6 +14,7 @@
     webapp             start the web app (http://127.0.0.1:5055)
     db                 strategy database commands (list, add, merge, register ...)
     sync               register strategy files and import result folders into the web app's database
+    journal            trade journal: every backtested trade with its market context (build, query, similar, export)
     export / import    back up / restore EVERYTHING in the workspace as one zip
 
 --host and --home apply to every command and to the processes they start. Defaults: host http://127.0.0.1:5000, home = the nearest
@@ -36,6 +37,7 @@ MODULES = {
     "orchestrate": "script_openalgo.orchestrator",
     "webapp": "script_openalgo.webapp.app",
     "db": "script_openalgo.strategy_db.cli",
+    "journal": "script_openalgo.journal",
 }
 
 

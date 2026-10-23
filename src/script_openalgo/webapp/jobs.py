@@ -368,6 +368,8 @@ def _test_callbacks(ws, sid, slug, instrument):
                 mf = _manifest(ws, instrument, dday) or {}
                 db.add_run(con, sid, instrument, dday, summ, verdict, rdir, jid, code_hash=_code_hash(slug),
                            dte=mf.get("days_to_expiry"), nearest=mf.get("nearest", True))
+            from script_openalgo import journal
+            journal.update_quietly(con)                      # trade journal: add this run's trades with their market context
             con.execute("UPDATE strategies SET status='tested', phase='', status_note='', file=?, updated=? WHERE id=?",
                         (slug + ".py" if os.path.exists(os.path.join(db.STRATEGIES_DIR, slug + ".py")) else None, db.now(), sid))
             con.commit()
@@ -527,6 +529,8 @@ def _multiday_callbacks(ws, sid, slug, instrument):
                            params=(r.get("summary") or {}).get("params"))
             a = out["aggregate"]
             con.execute("UPDATE jobs SET note=? WHERE id=?", (f"{a['days']} days, P&L {a['total_pnl']:+.0f}, avg/day {a['avg_per_day']}", jid))
+            from script_openalgo import journal
+            journal.update_quietly(con)
             con.execute("UPDATE strategies SET status='tested', phase='', status_note='', updated=? WHERE id=?", (db.now(), sid))
             con.commit()
         else:
