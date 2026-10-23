@@ -250,3 +250,11 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [x] Journal score 0-100 + confidence per BUY signal in the Signals tab (earlier days only; live from session candles) (2026-10-23)
 - [x] db dedupe: identical older runs removed (repo 106, deployment 282; databases backed up in backups/default_before_dedupe_20261023_193029.db); older runs with a different result kept
 - [ ] Signals journal score: check on a real live session during market hours
+
+## Phase 16: Live signal dashboard (PLANNED 2026-10-23, see plan.md section 17)
+- [ ] Feed endpoint /api/live/feed (new signals of all live sessions + status) and a Live tab: setup bar, status strip, signal feed; replay rehearsal mode
+- [ ] Sounds (Web Audio: CE/PE/exit tones, louder above the score threshold), Enable-sound button, desktop notification, title flash; only new signals sound
+- [ ] Strategy board (live status, today P&L, journal history) and "recommended strategies" from the journal
+- [ ] Live runner fetches ATM call/put and traded option candles so live journal scores use all features
+- [ ] Market state (OpenAlgo market_timings / market_holidays), broker-login and data-freshness checks with a warning sound
+- [ ] Test in real market hours (Analyzer/paper) and tune thresholds

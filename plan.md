@@ -457,3 +457,52 @@ Built as planned, with these choices:
 - Spread is booked as an estimated cost in `net_pnl` (and `spread_cost`), not in the fill price, so `verify.py` can still re-derive fills from the candles.
 - Backtest files call `instruments.apply_strategy_overrides(...)` (with a fallback for an older installed package).
 - Results in task.md Phase 15 notes. Delete for results and job logs added to the web app at the same time.
+
+## 17. Live signal dashboard ("Live desk") (PLAN, 2026-10-23)
+
+### 17.1 Goal
+One page the user opens during market hours. It runs the chosen strategies live on the chosen instrument(s), shows every new signal as it happens with its journal score, and plays a sound for it. It never trades by itself: the user decides and can press Act (paper by default).
+
+### 17.2 What already exists and is reused
+- Live sessions (`signals.py` live mode): the strategy's real code on OpenAlgo data; orders become signals (paper fill). Multi-strategy runs (`/api/signals/start-group`), stop/delete, 12 running sessions.
+- Journal score per BUY signal (`_signal_scores`, earlier days only), Act with the Analyzer guard, India VIX, chart with markers and indicator lines.
+
+### 17.3 The page (new tab "Live")
+1. **Setup bar**: instrument(s) (one or several), strategies (tick list, or "recommended": the strategies whose journal result on that instrument is best, with their sample size shown), minimum score for an alert (e.g. 55), sound on/off, volume, Start / Stop.
+2. **Status strip**: market state (pre-open / open / closed / holiday, from OpenAlgo `market_timings` and `market_holidays`), OpenAlgo connection and broker login (a 1-minute candle of today arrived), Analyzer (paper) or LIVE mode, time of the last candle per instrument (data freshness), sessions running / failed.
+3. **Signal feed** (newest first, large cards): time, instrument, strategy (letter + colour), CE/PE or exit, strike and price, underlying and VIX at that moment, **journal score + confidence** with "11/20 similar earlier trades won", open position and its running paper P&L; buttons Act / Dismiss / Open chart. Exits of an open position are linked to their entry.
+4. **Strategy board**: per strategy on this instrument: live status, signals today, paper P&L today, journal history (trades, days, win rate with 95% range, profit factor), last error.
+5. **Chart** (existing component): underlying + VIX for the selected instrument with all strategies' markers.
+
+### 17.4 Sound and notifications
+- Generated in the browser with the Web Audio API (no sound files): distinct tones for CE buy (rising), PE buy (falling), exit (double beep); louder / longer when the score is >= the threshold and confidence is not "low"; silent for signals below the threshold (still listed).
+- Browsers block sound until the user clicks the page once: an "Enable sound" button at the top; the page shows whether sound is active.
+- Optional desktop notification (Notification API, asks permission) so a signal is noticed when the tab is in the background; the tab title flashes "(2) new signals".
+- Only NEW signals sound (tracked by session + signal id), never on page reload.
+
+### 17.5 Server side
+- **Arm / auto-start**: Start before 09:15 is allowed; sessions wait for the open (the strategies already wait for SESSION_START). Sessions stop by themselves at the strategies' square-off (15:15); the page shows the day's summary after that.
+- **Feed endpoint** `/api/live/feed?since=<cursor>`: new signals of all live sessions since the cursor, with score and context, plus the status strip data; one light request every 2-3 s.
+- **Fuller live features for the score**: today a live score uses only the session's underlying and VIX candles. The live runner will also fetch the 1-minute candles (with OI and volume) of the ATM call/put and the traded option, so live scores use the same ~26 features as replays.
+- **API load**: each strategy polls OpenAlgo every ~20 s plus candle fetches; 8 strategies x 1-2 instruments stays well under OpenAlgo's 10 requests/second limit. Candle fetches shared per instrument where possible.
+
+### 17.6 Rehearsal outside market hours
+The same page in **replay mode**: pick a cached day and speed (1x-60x) and the feed, sounds and scores behave exactly as live. Used to test the page and to practise; clearly labelled REPLAY.
+
+### 17.7 Safety
+- No automatic orders. Act sends one market order only on the user's click, refused in LIVE (non-Analyzer) mode unless `allow_live_orders` was turned on with the typed confirmation.
+- Score text always shows sample size and confidence; "low" confidence signals never get the loud alert.
+- If OpenAlgo or the broker login fails mid-day, the status strip turns red and a distinct warning sound plays once.
+
+### 17.8 Build order
+1. Feed endpoint + Live tab with setup bar, status strip, signal feed (replay rehearsal first, since the market is closed in the evening).
+2. Sounds, "Enable sound", threshold, desktop notification, title flash.
+3. Strategy board + "recommended strategies" from the journal.
+4. Live runner fetches option candles -> full-feature live scores.
+5. Market state (timings, holidays), broker-login check, data-freshness warnings.
+6. Test during real market hours (paper / Analyzer), then adjust thresholds.
+
+### 17.9 Open questions for the user
+- Several instruments at once, or one per page?
+- "Recommended strategies": how many, and the minimum journal evidence to include one?
+- Should Act be on the feed cards, or only in the full Signals view?
