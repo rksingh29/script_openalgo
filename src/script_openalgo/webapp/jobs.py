@@ -311,6 +311,8 @@ def callbacks(ws, j):
         return _multiday_callbacks(ws, j["strategy_id"], meta.get("slug"), meta.get("instrument", "NIFTY"))
     if j["kind"] == "research":
         return None, _research_done
+    if j["kind"] == "news":
+        return None, _news_done
     return None, None
 
 
@@ -631,6 +633,112 @@ def resume_held(ws):
         con.close()
 
 
+# ---------------- market news (market-researcher agent, 09:00 / 13:00 / 15:00) ----------------
+NEWS_SLOTS = ("09:00", "13:00", "15:00")
+
+
+def news_dir(ws):
+    return os.path.join(os.path.dirname(db.ws_paths(ws)[0]), "news")
+
+
+def start_news(ws, slot=None):
+    """Run the market-researcher once: writes strategy_db/news/<date>_<HHMM>.json (context for the selector, never trades)."""
+    from script_openalgo.backtest_core import instruments
+    con = db.connect(ws)
+    if running(con, "news"):
+        con.close()
+        raise RuntimeError("a news job is already running")
+    pu = paused_until(con)
+    if pu:
+        con.close()
+        raise RuntimeError(f"Claude usage limit reached; try again after {pu.replace('T', ' ')}")
+    focus = [x for x in json.loads(db.get_setting(con, "selector_instruments", "[]") or "[]") if x in instruments.INSTRUMENTS]
+    ok, wait, reason, call_id = gate.reserve(con, "news", "market-researcher", weight=2)
+    con.close()
+    if not ok:
+        raise RuntimeError(f"Claude budget reached ({reason}); try again in about {max(1, round(wait / 60))} min")
+    now = datetime.now()
+    slot = slot or now.strftime("%H:%M")
+    out = os.path.join(news_dir(ws), f"{now:%Y-%m-%d}_{slot.replace(':', '')}.json")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    rel = os.path.relpath(out, ROOT).replace("\\", "/")
+    prompt = (f"Slot: {slot}. Date: {now:%Y-%m-%d}. Output file: {rel}. All instruments: {', '.join(instruments.INSTRUMENTS)}. "
+              f"Focus: {', '.join(focus) or 'NIFTY, BANKNIFTY'}. Follow your instructions and write the JSON file.")
+    schema = json.dumps({"type": "object", "properties": {"status": {"type": "string"}, "summary": {"type": "string"}}, "required": ["status"]})
+    cmd = [claude_exe(), "-p", prompt, "--agent", "market-researcher", "--permission-mode", "acceptEdits",
+           "--output-format", "json", "--json-schema", schema, "--allowedTools", "Read", "Write", "WebSearch", "WebFetch"]
+    jid = _launch(ws, "news", None, f"market news {now:%Y-%m-%d} {slot}", cmd,
+                  meta={"slot": slot, "date": now.strftime("%Y-%m-%d"), "file": out, "call_id": call_id})
+    c2 = db.connect(ws)
+    c2.execute("UPDATE claude_calls SET job_id=? WHERE id=?", (jid, call_id))
+    c2.commit()
+    c2.close()
+    return jid
+
+
+def _news_done(con, jid, status, code, lines):
+    """Record Claude usage; merge the events the agent found into strategy_db/events.csv (dates, symbols, sources)."""
+    env = None
+    for l in lines:
+        if l.lstrip().startswith("{"):
+            try:
+                env = json.loads(l)
+            except ValueError:
+                pass
+    meta = json.loads(con.execute("SELECT meta FROM jobs WHERE id=?", (jid,)).fetchone()["meta"] or "{}")
+    if meta.get("call_id"):
+        gate.finish(con, meta["call_id"], env if isinstance(env, dict) else None, "ok" if status == "ok" else status, status == "limit", "")
+    note = (env.get("result") or "")[-300:] if isinstance(env, dict) else "\n".join(lines)[-200:]
+    f = meta.get("file")
+    try:
+        data = json.load(open(f, encoding="utf-8")) if f and os.path.exists(f) else None
+    except ValueError:
+        data, note = None, "news file is not valid JSON"
+    if data:
+        merge_events(os.path.join(os.path.dirname(f), os.pardir, "events.csv"), data.get("events") or [])
+    elif status == "ok":
+        note = "agent finished but wrote no news file. " + note
+    con.execute("UPDATE jobs SET note=? WHERE id=?", (note, jid))
+    con.commit()
+
+
+def merge_events(path, events):
+    """Add new (date, instrument, event) rows to events.csv; existing rows (also hand-made ones) are kept."""
+    import csv as _csv
+    path = os.path.abspath(path)
+    rows, have = [], set()
+    if os.path.exists(path):
+        rows = list(_csv.DictReader(open(path, encoding="utf-8")))
+        have = {(r.get("date"), (r.get("instrument") or "*").upper(), (r.get("event") or "").lower()) for r in rows}
+    added = 0
+    for e in events:
+        d, i, ev = str(e.get("date") or ""), str(e.get("instrument") or "*").upper(), str(e.get("event") or "").lower()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) or not ev or (d, i, ev) in have:
+            continue
+        rows.append({"date": d, "instrument": i, "event": ev, "source": str(e.get("source") or "")[:300]})
+        have.add((d, i, ev))
+        added += 1
+    if added:
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            w = _csv.DictWriter(fh, fieldnames=["date", "instrument", "event", "source"])
+            w.writeheader()
+            w.writerows(sorted(rows, key=lambda r: (r["date"], r["instrument"])))
+    return added
+
+
+def news_due(con, now=None):
+    """The slot to run now (09:00 / 13:00 / 15:00 on weekdays, within 30 minutes after it) if it has not run today."""
+    now = now or datetime.now()
+    if now.weekday() >= 5 or db.get_setting(con, "news_enabled", "0") != "1":
+        return None
+    for slot in NEWS_SLOTS:
+        h, m = map(int, slot.split(":"))
+        t = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        if t <= now < t + timedelta(minutes=30) and db.get_setting(con, f"news_done_{now:%Y-%m-%d}_{slot}") != "1":
+            return slot
+    return None
+
+
 class AutoRunner(threading.Thread):
     """When enabled, tests the next queued strategy whenever no test is running (one at a time)."""
 
@@ -644,6 +752,16 @@ class AutoRunner(threading.Thread):
             try:
                 ws = self.get_ws()
                 resume_held(ws)
+                c0 = db.connect(ws)
+                slot = news_due(c0)
+                if slot:                                          # scheduled market news (09:00 / 13:00 / 15:00)
+                    db.set_setting(c0, f"news_done_{datetime.now():%Y-%m-%d}_{slot}", "1")
+                c0.close()
+                if slot:
+                    try:
+                        start_news(ws, slot)
+                    except RuntimeError as e:
+                        print("[news]", e, flush=True)
                 con = db.connect(ws)
                 on = db.get_setting(con, "auto_run", "0") == "1"
                 nxt = None

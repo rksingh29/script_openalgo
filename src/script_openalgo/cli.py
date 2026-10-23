@@ -14,6 +14,7 @@
     webapp             start the web app (http://127.0.0.1:5055)
     db                 strategy database commands (list, add, merge, register ...)
     sync               register strategy files and import result folders into the web app's database
+    selector           strategy selection by market condition (days, pick, backtest)
     journal            trade journal: every backtested trade with its market context (build, query, similar, export)
     export / import    back up / restore EVERYTHING in the workspace as one zip
 
@@ -38,6 +39,7 @@ MODULES = {
     "webapp": "script_openalgo.webapp.app",
     "db": "script_openalgo.strategy_db.cli",
     "journal": "script_openalgo.journal",
+    "selector": "script_openalgo.selector",
 }
 
 

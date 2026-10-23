@@ -254,6 +254,32 @@ def f_premium(c):
     return out
 
 
+@feature_group("day", 1, {"gap_class": "gap-up / gap-down / flat (vs the instrument's 20-day average range)",
+                          "vix_regime": "VIX at the open vs its 20-day average: high / normal / low",
+                          "open_type": "first 30 minutes: trend-up / trend-down / range (only for entries after 09:45)",
+                          "prev_range_class": "previous day's range vs average: wide / normal / narrow",
+                          "expiry": "expiry / pre-expiry / normal", "events": "event tags of the day (strategy_db/events.csv)",
+                          "vix_vs_avg20": "VIX at the open / its 20-day average", "prev_trend": "previous day close-open, share of its range"})
+def f_day(c):
+    from script_openalgo import selector
+    lab = selector.day_labels(c.cache, c.instrument, c.day, intraday=c.series(c.cfg["index_symbol"]), vix_intraday=c.series("INDIAVIX"),
+                              daily=c.daily(), vix_daily=c._load("daily_INDIAVIX", None), dte=c.run.get("dte"),
+                              events=_events(), upto=c.ts.strftime("%H:%M"))
+    return {k: lab.get(k) for k in ("gap_class", "vix_regime", "open_type", "prev_range_class", "expiry", "events", "vix_vs_avg20", "prev_trend")
+            if lab.get(k) not in (None, "")}
+
+
+_EVENTS = None
+
+
+def _events():
+    global _EVENTS
+    if _EVENTS is None:
+        from script_openalgo import selector
+        _EVENTS = selector.load_events()
+    return _EVENTS
+
+
 # ---------------- data loading (one build reads each file once) ----------------
 def make_loader(cache):
     memo = {}
@@ -628,6 +654,23 @@ def _bh(pvals):
     return q
 
 
+def _perm_test(nets_all, idx, rest, perms, rng, group, feature, label, days):
+    import numpy as np
+    a, rr = nets_all[idx], nets_all[rest]
+    obs = a.mean() - rr.mean()
+    pool = np.concatenate([a, rr])
+    cnt = 0
+    for _ in range(perms):
+        rng.shuffle(pool)
+        if abs(pool[:len(a)].mean() - pool[len(a):].mean()) >= abs(obs) - 1e-9:
+            cnt += 1
+    p = (cnt + 1) / (perms + 1)
+    return {"group": group, "feature": feature, "condition": label, "trades": len(idx), "days": days,
+            "avg_net": round(float(a.mean()), 1), "avg_net_rest": round(float(rr.mean()), 1), "diff": round(float(obs), 1),
+            "win_rate": round(float((a > 0).mean() * 100), 1), "win_rate_rest": round(float((rr > 0).mean() * 100), 1),
+            "p": round(p, 4), "total_net": round(float(a.sum()), 1)}
+
+
 def edges(rows, min_trades=8, min_days=5, perms=2000, group_by=("slug", "instrument"), seed=7):
     """For every (strategy, instrument) and feature: split the trades into thirds by the feature and compare each third with
     the other trades of that strategy (average net, shuffle test; win rate shown too). All p-values together get
@@ -644,6 +687,16 @@ def edges(rows, min_trades=8, min_days=5, perms=2000, group_by=("slug", "instrum
             continue
         nets_all = np.array([x["net"] or 0 for x in g], dtype=float)
         for f in names:
+            cats = [(i, x.get(f)) for i, x in enumerate(g) if isinstance(x.get(f), str)]
+            if len(cats) >= 2 * min_trades:                       # categorical feature: each category vs the rest
+                for cat in sorted({v for _, v in cats}):
+                    idx = [i for i, v in cats if v == cat]
+                    rest = [i for i, v in cats if v != cat]
+                    days = len({g[i]["day"] for i in idx})
+                    if len(idx) < min_trades or len(rest) < min_trades or days < min_days:
+                        continue
+                    tests.append(_perm_test(nets_all, idx, rest, perms, rng, dict(zip(group_by, key)), f, f"{f} = {cat}", days))
+                continue
             vals = [(i, x.get(f)) for i, x in enumerate(g) if isinstance(x.get(f), (int, float))]
             if len(vals) < 2 * min_trades or len({v for _, v in vals}) < 3:
                 continue
@@ -657,20 +710,7 @@ def edges(rows, min_trades=8, min_days=5, perms=2000, group_by=("slug", "instrum
                 days = len({g[i]["day"] for i in idx})
                 if len(idx) < min_trades or len(rest) < min_trades or days < min_days:
                     continue
-                a, rr = nets_all[idx], nets_all[rest]
-                obs = a.mean() - rr.mean()
-                pool = np.concatenate([a, rr])
-                cnt = 0
-                for _ in range(perms):
-                    rng.shuffle(pool)
-                    if abs(pool[:len(a)].mean() - pool[len(a):].mean()) >= abs(obs) - 1e-9:
-                        cnt += 1
-                p = (cnt + 1) / (perms + 1)
-                wa, wr = float((a > 0).mean() * 100), float((rr > 0).mean() * 100)
-                tests.append({"group": dict(zip(group_by, key)), "feature": f, "condition": label, "trades": len(idx), "days": days,
-                              "avg_net": round(float(a.mean()), 1), "avg_net_rest": round(float(rr.mean()), 1), "diff": round(float(obs), 1),
-                              "win_rate": round(wa, 1), "win_rate_rest": round(wr, 1), "p": round(p, 4),
-                              "total_net": round(float(a.sum()), 1)})
+                tests.append(_perm_test(nets_all, idx, rest, perms, rng, dict(zip(group_by, key)), f, label, days))
     for t, q in zip(tests, _bh([t["p"] for t in tests]) if tests else []):
         t["q"] = round(q, 4)
     m = len(tests)

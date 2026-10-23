@@ -443,3 +443,22 @@ In Claude Code, ask in plain words ("would the 12:05 PE from Parabolic SAR today
 ## 22. Removing duplicate runs from the command line
 
 `script-openalgo db dedupe` deletes older runs that are identical to the newest run of the same strategy, instrument, day and options (same trades and P&L), keeping every other run and all result folders. `--dry-run` shows the counts first; `--include-changed` also removes older runs with a different result (normally kept as history); `--home <folder>` works on another workspace. Back up `strategy_db/default.db` first if in doubt.
+
+## 23. Selector: which strategies to run today
+
+The **Selector** tab decides which strategies to run on the instruments you select, from how they did on days like today.
+
+1. **Selected instruments**: tick them (the choice is remembered). **Max picks** (1-8): how many strategy x instrument picks in total, so they can all run together.
+2. **Pick for today (live)** reads today's candles from OpenAlgo and labels each instrument's day:
+   - **Gap**: gap-up / gap-down / flat, measured against the instrument's own average daily range (and the gap %);
+   - **VIX regime**: India VIX at the open against its 20-day average (high / normal / low);
+   - **First 30 min** (after 09:45): trend-up / trend-down / range;
+   - previous day's range (wide / normal / narrow), days to expiry, and event tags (results today / next / previous, RBI, budget...).
+   Then each strategy is judged on earlier days with the same labels: "success" = a day whose net P&L was positive. The most specific match with at least 8 such days is used, otherwise a wider one, finally all days ("no matching condition with enough history" is shown when that happens). Picks need 5+ days and a cautious win rate (the lower end of its 95% range) of 35%+ and a positive average. **Avoid** lists clearly losing strategies.
+   Stage: before 09:46 the picks use the gap (stage 1); afterwards also the first 30 minutes (stage 2). **Pick for that day** does the same for a cached past day (rehearsal).
+3. **Start live signals for these picks** opens live Signals sessions (one run per instrument), orders are not sent.
+4. **Does following the picks pay?** replays the selector on every cached day using only the days before it, and compares it with running every strategy and with the best single strategy so far. Use the picks as a guide only once the selector beats both over 30+ days. On 2026-10-23 it did not (NIFTY/BANKNIFTY/RELIANCE, 14 days: selector +9,984, all +44,606, best so far +20,606): there is not enough history per condition yet.
+
+**Market news** (same tab): the market-researcher agent collects market-wide highlights, per-instrument news with a sentiment from -2 to +2, and upcoming events (results dates, RBI, budget, CPI, Fed...), each with sources. Turn on **market news at 09:00 / 13:00 / 15:00** to run it on weekdays while the web app is open, or press **Run news now**. Each run uses Claude budget. Events it finds are added to `strategy_db/events.csv` (you can edit that file; columns date, instrument, event, source; instrument `*` = all) and become day labels. News is shown as context only: it does not change the picks until the journal shows that it matters.
+
+From PowerShell: `script-openalgo selector days` (label all cached days), `script-openalgo selector pick --instruments NIFTY,BANKNIFTY,RELIANCE [--day 2026-10-16 --stage 2]`, `script-openalgo selector backtest --instruments NIFTY,BANKNIFTY,RELIANCE`.

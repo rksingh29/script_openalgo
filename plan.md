@@ -518,7 +518,7 @@ The dashboard runs the chosen strategies on **all selected instruments together*
 - **Sounds**: as planned, plus a short instrument cue (e.g. one/two/three pips before the tone) so the instrument is recognisable without looking; desktop notifications name the instrument.
 - Open question 17.9 "several instruments at once" is answered: yes.
 
-## 18. Strategy selection by success rate and market condition (PLAN, 2026-10-23)
+## 18. Strategy selection by success rate and market condition (BUILT 2026-10-23: steps 1-4 and the news agent; see task.md Phase 17)
 
 ### 18.1 Goal
 Every morning, for each selected instrument, decide which strategies to run (and which to avoid) from **how they did on days like today**: gap up / gap down / flat open, volatility, expiry, results and macro events, and the overnight news. The pick feeds the Live desk ("recommended"), always with the evidence and its sample size. The selection rule itself is tested on past days before it is trusted.
@@ -574,3 +574,8 @@ Every field is stamped with the time it became known; the selector only uses fie
 5. Event calendar (`events.csv`: macro dates, results dates; manual editing in the web app).
 6. Pre-market news agent (optional, budget-gated), stored per day, used only as context until proven.
 7. Daily job (after close): fetch, backfill, run all strategies, rebuild journal and `market_days`, so the evidence grows every day.
+
+### 18.10 User decisions (2026-10-23)
+- News agent runs at 09:00, 13:00 and 15:00 (weekdays, while the web app runs, when switched on); it shows market-wide highlights and news for all instruments; it is context only.
+- Strategy selection is based on the **selected instruments**, up to **8 picks** in total (so they can run at once).
+- Build order: selector first, then the Live desk (section 17).

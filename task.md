@@ -261,10 +261,13 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [ ] Test in real market hours (Analyzer/paper) and tune thresholds
 
 ## Phase 17: Strategy selection by market condition (PLANNED 2026-10-23, see plan.md section 18)
-- [ ] market_days table + classifier: gap class (vs own volatility), gap filled by 09:45, previous day trend/range, VIX regime (daily VIX history), calendar (DTE, expiry day), opening behaviour at 09:45
-- [ ] Day-condition features in the journal and the edge report (gap_class, vix_regime, event tags)
-- [ ] Selector: 09:15 (gap) and 09:45 (opening behaviour) picks and avoids per instrument, success rate per strategy-day with Wilson lower bound, fallback when cells are thin, explanation text; shown in Strategies tab and pre-selected in the Live desk
-- [ ] Walk-forward test of the selector vs "all strategies" and "best so far"; adopt only if it beats both over 30+ days
+- [x] market_days table + classifier: gap class (vs own volatility), gap filled by 09:45, previous day trend/range, VIX regime (daily VIX history), calendar (DTE, expiry day), opening behaviour at 09:45
+- [x] Day-condition features in the journal and the edge report (gap_class, vix_regime, event tags)
+- [x] Selector: 09:15 (gap) and 09:45 (opening behaviour) picks and avoids per instrument, success rate per strategy-day with Wilson lower bound, fallback when cells are thin, explanation text; shown in Strategies tab and pre-selected in the Live desk
+- [x] Walk-forward test of the selector vs "all strategies" and "best so far"; adopt only if it beats both over 30+ days
 - [ ] Event calendar strategy_db/events.csv (results dates, RBI/budget/CPI/Fed), editable in the web app; backfill past results dates
 - [ ] Pre-market market-researcher agent (news, results, GIFT Nifty, sentiment with sources; budget-gated); context only until the journal proves a news tag matters
 - [ ] Daily job after the close: fetch, backfill, run all strategies, rebuild journal and market_days
+- Phase 17 build notes (2026-10-23): market_days for 71 cached instrument-days; live labels from OpenAlgo (today: gap-down on NIFTY/BANKNIFTY/RELIANCE, VIX high); journal `day` feature group; edge report tests categories too; Selector tab with picks/avoid, walk-forward, news panel; market-researcher agent scheduled 09:00/13:00/15:00 (news_enabled), events merged into strategy_db/events.csv. Walk-forward on NIFTY/BANKNIFTY/RELIANCE, 14 days: selector +9,984 vs all +44,606 vs best so far +20,606 -> not proven yet; most conditions fall back to "all days"
+- [ ] News agent: first real run during market hours and check the JSON / sources (not run yet: it spends Claude budget)
+- [ ] Event calendar editing in the web app (today: edit strategy_db/events.csv by hand)

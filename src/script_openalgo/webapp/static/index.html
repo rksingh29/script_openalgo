@@ -145,7 +145,7 @@ $("#seed").onclick = () => confirm("Research 10 unique strategies (one-time seed
 $("#daily").onclick = () => act(() => api("/api/research", { mode: "daily" }));
 $("#auto").onchange = (e) => act(() => api("/api/auto", { on: e.target.checked }));
 
-const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["signals", "Signals"], ["instruments", "Instruments"], ["jobs", "Jobs"], ["backup", "Backup"]];
+const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["selector", "Selector"], ["signals", "Signals"], ["instruments", "Instruments"], ["jobs", "Jobs"], ["backup", "Backup"]];
 function renderTabs() {
   $("#tabs").replaceChildren(...TABS.map(([k, l]) => h("button", { class: st.tab === k ? "on" : "", onclick: () => { st.tab = k; refresh(); } }, l)));
 }
@@ -359,6 +359,91 @@ function optionsPanel(sid, getInst, chosen) {
   };
   box.redraw = draw; draw();
   return box;
+}
+
+// ---------- selector: which strategies to run today on the selected instruments (+ market news) ----------
+async function loadSelector() {
+  const R = st.selr = st.selr || { result: null, bt: null, day: "", stage: "", busy: false };
+  R.settings = await api("/api/selector/settings");
+  R.news = await api("/api/news");
+}
+function selectorView() {
+  const R = st.selr, S = R && R.settings;
+  if (!S) return h("div", {}, "Loading…");
+  const save = (patch) => act(() => api("/api/selector/settings", { instruments: S.instruments, max_picks: S.max_picks, news_enabled: S.news_enabled, ...patch }));
+  const toggleInst = (i) => { S.instruments = S.instruments.includes(i) ? S.instruments.filter(x => x !== i) : [...S.instruments, i]; save({}); };
+  const settings = h("div", { class: "card" }, h("b", {}, "Selected instruments"),
+    h("div", { class: "row small", style: "flex-wrap:wrap;gap:4px;margin-top:6px" },
+      S.all_instruments.map(i => h("label", { class: "chip", style: `cursor:pointer;${S.instruments.includes(i) ? "outline:2px solid var(--acc)" : ""}` },
+        h("input", { type: "checkbox", checked: S.instruments.includes(i), onchange: () => toggleInst(i) }), " ", i)),
+      h("span", { style: "flex:1" }),
+      h("label", {}, "max picks ", h("select", { onchange: (e) => { S.max_picks = +e.target.value; save({}); } }, [1, 2, 3, 4, 5, 6, 7, 8].map(n => h("option", { value: n, selected: n === S.max_picks }, n)))),
+      h("label", { title: `news agent at ${S.news_slots.join(", ")} on weekdays while the web app runs (uses Claude budget)` },
+        h("input", { type: "checkbox", checked: S.news_enabled, onchange: (e) => { S.news_enabled = e.target.checked; save({ news_enabled: e.target.checked }); } }), ` market news at ${S.news_slots.join(" / ")}`)),
+    h("div", { class: "mute small", style: "margin-top:4px" }, "The selector picks up to the max number of strategies across these instruments (they can then run together in Signals)."));
+  const run = (day) => { if (!S.instruments.length) { alert("Select at least one instrument."); return; } R.busy = true; render();
+    api("/api/selector/run", { instruments: S.instruments, day: day || "", stage: R.stage || "", max_picks: S.max_picks })
+      .then(r => { R.result = r; }).catch(e => alert(e.message)).finally(() => { R.busy = false; render(); }); };
+  const res = R.result;
+  const labCols = [["gap_class", "Gap"], ["gap_pct", "Gap %"], ["vix_regime", "VIX regime"], ["vix_open", "VIX open"], ["open_type", "First 30 min"], ["prev_range_class", "Prev day range"], ["expiry", "Expiry"], ["dte", "DTE"], ["events", "Events"]];
+  const pickTable = (rows, kind) => h("table", {}, h("thead", {}, h("tr", {}, ["Instrument", "Strategy", "Condition used", "Days", "Won", "Win % (lower bound)", "Avg/day", "PF"].map(t => h("th", {}, t)))),
+    h("tbody", {}, rows.map(p => h("tr", {}, h("td", {}, p.instrument), h("td", {}, h("b", { class: kind === "avoid" ? "neg" : "pos" }, p.slug)), h("td", { class: "small" }, p.condition),
+      h("td", {}, p.days), h("td", {}, p.wins), h("td", {}, `${p.win_rate ?? "–"}% (${p.win_lb}%)`), h("td", {}, money(p.avg_net)), h("td", {}, p.profit_factor ?? "–")))));
+  const startPicks = () => {
+    const by = {}; res.picks.forEach(p => (by[p.instrument] = by[p.instrument] || []).push(p.slug));
+    const sid = (slug) => (st.data.strategies.find(s => s.slug === slug) || {}).id;
+    if (!confirm(`Start LIVE signal sessions for ${res.picks.length} pick(s)? Orders are not sent; signals appear in the Signals tab.`)) return;
+    act(async () => {
+      for (const [inst, slugs] of Object.entries(by)) {
+        const ids = slugs.map(sid).filter(Boolean);
+        if (ids.length === 1) await api("/api/signals/start", { strategy_id: ids[0], instrument: inst, mode: "live" });
+        else if (ids.length > 1) await api("/api/signals/start-group", { strategy_ids: ids, instrument: inst, mode: "live" });
+      }
+      st.tab = "signals";
+    });
+  };
+  const picks = h("div", { class: "card" }, h("div", { class: "row" }, h("b", {}, "Today's picks"), h("span", { style: "flex:1" }),
+      h("button", { class: "primary", disabled: R.busy, onclick: () => run("") }, R.busy ? "Working…" : "Pick for today (live)"),
+      h("span", { class: "mute small" }, "or a past day"), h("input", { type: "date", value: R.day, onchange: (e) => { R.day = e.target.value; } }),
+      h("button", { disabled: R.busy, onclick: () => R.day ? run(R.day) : alert("Choose a day.") }, "Pick for that day"),
+      h("select", { title: "stage 1 = at the open (gap known), stage 2 = after 09:45 (first 30 minutes known); auto = by the clock", onchange: (e) => { R.stage = e.target.value; } },
+        [["", "stage: auto"], ["1", "stage 1 (09:16)"], ["2", "stage 2 (09:46)"]].map(([v, t]) => h("option", { value: v, selected: R.stage === v }, t)))),
+    !res ? h("div", { class: "mute small", style: "margin-top:6px" }, "Classifies the day for each selected instrument (gap, VIX regime, opening behaviour, expiry, events) and ranks the strategies by how they did on similar earlier days (strategy-days with net > 0).")
+    : h("div", {},
+      h("div", { class: "small mute", style: "margin:6px 0" }, `${res.live ? "LIVE today" : "Past day " + res.day} · stage ${res.stage}`),
+      Object.keys(res.problems || {}).length ? h("div", { class: "banner small" }, Object.entries(res.problems).map(([i, m]) => h("div", {}, `${i}: ${m}`))) : null,
+      h("table", {}, h("thead", {}, h("tr", {}, ["", ...labCols.map(c => c[1])].map(t => h("th", {}, t)))),
+        h("tbody", {}, Object.entries(res.labels).map(([i, lab]) => h("tr", {}, h("td", {}, h("b", {}, i)), labCols.map(([k]) => h("td", { class: "small" }, lab[k] ?? "–")))))),
+      h("h4", {}, `Picks (${res.picks.length})`), res.picks.length ? pickTable(res.picks, "pick") : h("div", { class: "mute small" }, "No strategy has enough positive evidence under today's conditions: sitting out is an option."),
+      res.picks.length && res.live ? h("button", { class: "primary", style: "margin-top:6px", onclick: startPicks }, "Start live signals for these picks") : null,
+      res.avoid.length ? [h("h4", {}, `Avoid (${res.avoid.length})`), pickTable(res.avoid, "avoid")] : null,
+      h("div", { class: "mute small", style: "margin-top:6px" }, res.note)));
+  const bt = R.bt;
+  const walk = h("div", { class: "card" }, h("div", { class: "row" }, h("b", {}, "Does following the picks pay? (walk-forward)"), h("span", { style: "flex:1" }),
+      h("button", { disabled: R.busy, onclick: () => { R.busy = true; render(); api("/api/selector/backtest", { instruments: S.instruments, max_picks: S.max_picks }).then(r => { R.bt = r; }).catch(e => alert(e.message)).finally(() => { R.busy = false; render(); }); } }, "Run test")),
+    bt ? h("div", {}, h("div", { class: "small", style: "margin:6px 0" }, `${bt.days} days: selector `, money(bt.selector), " · all strategies ", money(bt.all), " · best strategy so far ", money(bt.best_so_far),
+        h("span", { class: "mute" }, " (each day uses only earlier days; trust the picks only when the selector beats both over 30+ days)")),
+      h("table", {}, h("thead", {}, h("tr", {}, ["Day", "Selector", "All", "Best so far", "Picks"].map(t => h("th", {}, t)))),
+        h("tbody", {}, bt.per_day.slice().reverse().map(r => h("tr", {}, h("td", {}, r.day), h("td", {}, money(r.selector)), h("td", {}, money(r.all)), h("td", {}, money(r.best_so_far)), h("td", { class: "small mute" }, r.picks.join(", ") || "–"))))))
+      : h("div", { class: "mute small" }, "Replays the selector on every cached day using only the days before it, and compares the result with running every strategy and with the best single strategy so far."));
+  const N = R.news || { items: [] };
+  const sentiment = (v) => h("b", { class: v > 0 ? "pos" : v < 0 ? "neg" : "" }, v > 0 ? "+" + v : String(v ?? 0));
+  const link = (u, i) => /^https?:\/\//i.test(u || "") ? h("a", { href: u, target: "_blank", rel: "noopener noreferrer", class: "small" }, ` [${i + 1}]`) : null;
+  const latest = N.items.find(x => !x.error);
+  const news = h("div", { class: "card" }, h("div", { class: "row" }, h("b", {}, "Market news"), h("span", { class: "mute small" }, ` ${N.enabled ? "scheduled " + N.slots.join(", ") : "schedule off"} · context only, not used to pick`),
+      h("span", { style: "flex:1" }), (N.jobs || []).filter(j => j.status === "running").length ? badge("running", true) : null,
+      h("button", { onclick: () => act(() => api("/api/news/run", {})) }, "Run news now")),
+    !latest ? h("div", { class: "mute small" }, "No news collected yet. Turn on the schedule above or press Run news now (uses Claude budget).")
+    : h("div", {},
+      h("div", { class: "small mute", style: "margin:4px 0" }, `${latest.date} ${latest.slot} (generated ${latest.generated_at || ""})`),
+      h("ul", { class: "small" }, (latest.highlights || []).map(x => h("li", {}, x.text, (x.sources || []).map(link)))),
+      h("table", {}, h("thead", {}, h("tr", {}, ["Instrument", "Sentiment", "Tags", "Summary"].map(t => h("th", {}, t)))),
+        h("tbody", {}, Object.entries(latest.instruments || {}).sort((a, b) => (S.instruments.includes(b[0]) ? 1 : 0) - (S.instruments.includes(a[0]) ? 1 : 0)).map(([i, x]) =>
+          h("tr", {}, h("td", {}, S.instruments.includes(i) ? h("b", {}, i) : i), h("td", {}, sentiment(x.sentiment), h("span", { class: "mute small" }, ` (${x.confidence ?? "–"})`)),
+            h("td", { class: "small" }, (x.tags || []).join(", ")), h("td", { class: "small" }, x.summary || "", (x.sources || []).map(link)))))),
+      (latest.events || []).length ? [h("h4", {}, "Upcoming events"), h("table", {}, h("tbody", {}, latest.events.slice(0, 15).map(e => h("tr", {}, h("td", {}, e.date), h("td", {}, e.instrument), h("td", {}, e.event), h("td", {}, link(e.source, 0))))))] : null,
+      N.items.length > 1 ? h("details", {}, h("summary", { class: "small mute" }, `Earlier runs (${N.items.length - 1})`), N.items.slice(1).map(it => h("div", { class: "small" }, h("b", {}, `${it.date || ""} ${it.slot || it.file}`), h("ul", {}, (it.highlights || []).map(x => h("li", {}, x.text)))))) : null));
+  return h("div", {}, settings, picks, walk, news);
 }
 
 // ---------- signals: run a strategy live or replay a cached day; its orders appear as signals you can act on ----------
@@ -933,7 +1018,7 @@ function render() {
     return;
   }
   renderHeader(); renderTabs();
-  const v = { strategies: strategiesView, results: resultsView, data: dataView, instruments: instrumentsView, signals: signalsView, jobs: jobsView, backup: backupView }[st.tab]();
+  const v = { strategies: strategiesView, results: resultsView, data: dataView, instruments: instrumentsView, selector: selectorView, signals: signalsView, jobs: jobsView, backup: backupView }[st.tab]();
   const focus = document.activeElement && document.activeElement.id === "q";
   $("#view").replaceChildren(v);
   if (focus) { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -946,6 +1031,7 @@ async function refresh() {
     if (!st.page && st.tab === "data") st.dataList = await api("/api/data");
     if (!st.page && st.tab === "instruments" && !st.instBusy) st.instList = await api("/api/instruments");
     if (!st.page && st.tab === "signals") await loadSignals();
+    if (!st.page && st.tab === "selector" && !(st.selr && st.selr.busy)) await loadSelector();
     if (!st.page && st.tab === "backup" && !st.backupBusy) st.backup = { preview: await api("/api/backup/preview"), list: await api("/api/backup/list") };
     render();
   } catch (e) { $("#banner").replaceChildren(h("div", { class: "banner" }, "Cannot reach the server: " + e.message)); }

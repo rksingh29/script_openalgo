@@ -391,6 +391,112 @@ def signals_clear():
     return jsonify({"deleted": len(rows)})
 
 
+# ---------------- strategy selector + market news ----------------
+@app.get("/api/selector/settings")
+def selector_settings():
+    con = conn()
+    out = {"instruments": json.loads(db.get_setting(con, "selector_instruments", "[]") or "[]"),
+           "max_picks": int(db.get_setting(con, "selector_max_picks", "8") or 8),
+           "news_enabled": db.get_setting(con, "news_enabled", "0") == "1", "news_slots": list(jobs.NEWS_SLOTS),
+           "all_instruments": list(instruments.INSTRUMENTS)}
+    con.close()
+    return jsonify(out)
+
+
+@app.post("/api/selector/settings")
+def selector_settings_save():
+    b = request.json or {}
+    insts = [i for i in (b.get("instruments") or []) if i in instruments.INSTRUMENTS]
+    try:
+        mx = max(1, min(8, int(b.get("max_picks") or 8)))
+    except (TypeError, ValueError):
+        return err("max picks must be 1-8")
+    con = conn()
+    db.set_setting(con, "selector_instruments", json.dumps(insts))
+    db.set_setting(con, "selector_max_picks", str(mx))
+    if "news_enabled" in b:
+        db.set_setting(con, "news_enabled", "1" if b.get("news_enabled") else "0")
+    con.close()
+    return jsonify({"ok": True})
+
+
+@app.post("/api/selector/run")
+def selector_run():
+    """Picks for today (live day labels from OpenAlgo) or for a cached past day (rehearsal)."""
+    from datetime import datetime as _dt
+    from script_openalgo import journal, selector
+    b = request.json or {}
+    insts = [i for i in (b.get("instruments") or []) if i in instruments.INSTRUMENTS]
+    if not insts:
+        return err("select at least one instrument")
+    day = (b.get("day") or "").strip() or None
+    stage = int(b.get("stage") or (1 if _dt.now().strftime("%H:%M") < "09:46" else 2))
+    con = conn()
+    try:
+        selector.build_days(con, quiet=True)
+        journal.update_quietly(con)
+        labels_by, problems = None, {}
+        if not day:
+            labels_by = {}
+            for i in insts:
+                try:
+                    labels_by[i] = selector.live_labels(i)
+                except (Exception, SystemExit) as e:          # no data yet, broker logged out, ...
+                    labels_by[i] = {}
+                    problems[i] = str(e)[:160]
+        res = selector.pick(con, insts, day, stage if day else stage, int(b.get("max_picks") or 8), labels_by)
+        res["problems"] = problems
+        res["live"] = not day
+        res["evaluated"] = {k: v[:12] for k, v in res["evaluated"].items()}
+        if not day:
+            db.set_setting(con, "selector_last", json.dumps({"at": db.now(), "stage": stage, "picks": res["picks"]}))
+        return jsonify(res)
+    finally:
+        con.close()
+
+
+@app.post("/api/selector/backtest")
+def selector_backtest():
+    from script_openalgo import journal, selector
+    b = request.json or {}
+    insts = [i for i in (b.get("instruments") or []) if i in instruments.INSTRUMENTS]
+    if not insts:
+        return err("select at least one instrument")
+    con = conn()
+    try:
+        selector.build_days(con, quiet=True)
+        journal.update_quietly(con)
+        return jsonify(selector.backtest(con, insts, int(b.get("max_picks") or 8)))
+    finally:
+        con.close()
+
+
+@app.get("/api/news")
+def news_list():
+    """News files of the last days (newest first) and the state of today's slots."""
+    d = jobs.news_dir(ws())
+    items = []
+    if os.path.isdir(d):
+        for f in sorted(glob.glob(os.path.join(d, "*.json")), reverse=True)[:9]:
+            try:
+                items.append(json.load(open(f, encoding="utf-8")) | {"file": os.path.basename(f)})
+            except (ValueError, OSError):
+                items.append({"file": os.path.basename(f), "error": "not valid JSON"})
+    con = conn()
+    running = [dict(r) for r in con.execute("SELECT id, label, status, started FROM jobs WHERE kind='news' ORDER BY id DESC LIMIT 3")]
+    enabled = db.get_setting(con, "news_enabled", "0") == "1"
+    con.close()
+    return jsonify({"items": items, "jobs": running, "enabled": enabled, "slots": list(jobs.NEWS_SLOTS)})
+
+
+@app.post("/api/news/run")
+def news_run():
+    try:
+        return jsonify({"job_id": jobs.start_news(ws())})
+    except RuntimeError as e:
+        return err(str(e), 409)
+
+
 # ---------------- signals: run a strategy live or as a replay; its orders become signals; "act" sends one ----------------
 MAX_SIGNAL_SESSIONS = 12     # running sessions at once (a group of strategies uses one each)
 MAX_GROUP = 8                # strategies in one multi-strategy run
