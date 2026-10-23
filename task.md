@@ -252,7 +252,8 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [ ] Signals journal score: check on a real live session during market hours
 
 ## Phase 16: Live signal dashboard (PLANNED 2026-10-23, see plan.md section 17)
-- [ ] Feed endpoint /api/live/feed (new signals of all live sessions + status) and a Live tab: setup bar, status strip, signal feed; replay rehearsal mode
+- [ ] Feed endpoint /api/live/feed (new signals of all live sessions, all selected instruments + status) and a Live tab: instruments x strategies setup, status per instrument, one feed with instrument labels and filters, chart tab per instrument; replay rehearsal mode
+- [ ] Live runner: one process per instrument running all its strategies in threads with a shared, briefly cached data layer (candles, quotes, option candles) to keep OpenAlgo calls low
 - [ ] Sounds (Web Audio: CE/PE/exit tones, louder above the score threshold), Enable-sound button, desktop notification, title flash; only new signals sound
 - [ ] Strategy board (live status, today P&L, journal history) and "recommended strategies" from the journal
 - [ ] Live runner fetches ATM call/put and traded option candles so live journal scores use all features

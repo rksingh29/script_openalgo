@@ -503,6 +503,17 @@ The same page in **replay mode**: pick a cached day and speed (1x-60x) and the f
 6. Test during real market hours (paper / Analyzer), then adjust thresholds.
 
 ### 17.9 Open questions for the user
-- Several instruments at once, or one per page?
+- ~~Several instruments at once, or one per page?~~ Several at once (17.10).
 - "Recommended strategies": how many, and the minimum journal evidence to include one?
 - Should Act be on the feed cards, or only in the full Signals view?
+
+### 17.10 Update (2026-10-23): several selected instruments at once (user decision)
+The dashboard runs the chosen strategies on **all selected instruments together** (e.g. NIFTY, BANKNIFTY, RELIANCE), not on one instrument per page. Changes to the plan above:
+- **Setup bar**: a tick list of instruments (from the instrument table) and a tick list of strategies; "recommended" picks strategies per instrument from that instrument's journal evidence. A strategy can be on for one instrument and off for another (small matrix: instruments x strategies).
+- **Runner**: one live process **per instrument** runs all its strategies (one thread each) and shares one data layer: underlying, VIX and option candles and quotes are fetched once per instrument and cached for a few seconds, so N strategies do not multiply the OpenAlgo calls. Each strategy keeps its own module (constants per instrument via `instruments.apply_strategy_overrides`) and its own events file, so the existing views, scores and Act keep working. Cap: about 4 instruments x 8 strategies; the page shows the expected API rate before Start.
+- **Feed**: one feed across all selected instruments, newest first, each card labelled with the instrument; filter chips per instrument and per strategy; the alert threshold can be set per instrument.
+- **Status strip**: one row per instrument (last candle time, sessions running/failed); market state and OpenAlgo/broker/Analyzer status once.
+- **Chart**: a tab per instrument (underlying + VIX with that instrument's markers); the tab of an instrument with a new signal is highlighted.
+- **Strategy board**: rows = strategy x instrument.
+- **Sounds**: as planned, plus a short instrument cue (e.g. one/two/three pips before the tone) so the instrument is recognisable without looking; desktop notifications name the instrument.
+- Open question 17.9 "several instruments at once" is answered: yes.
