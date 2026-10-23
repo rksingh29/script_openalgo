@@ -17,6 +17,9 @@ Research, backtest and manage OpenAlgo option strategies against an OpenAlgo ser
 ## Signals tab
 `src/script_openalgo/signals.py` runs a strategy's real class as a job (kind `signal`): live (OpenAlgo SDK, real time) or replay (FakeClient on a cached day, full speed until `--from`, then `--speed`x). `snapshot()` records the numbers the strategy keeps on `self` (indicator lists -> latest value, dicts such as `levels`/`position` flattened) as `state` events for the chart's indicator lines and values panel. `SignalRecorder` turns every `placeorder()` into a signal event (paper fill at the current price) in `strategy_db/logs/<ws>/signals_<job>.jsonl`. Several strategies in one run: `/api/signals/start-group` launches one session per strategy with a shared `group` id in the job meta; `/api/signals/group/<g>` merges them (bars/VIX once, tagged signals, per-member states and logs); stop/delete per group. Limits: 12 running sessions, 8 per group. Web app endpoints `/api/signals/*`; **Act** sends one live signal via `/api/v1/placeorder`, only in OpenAlgo Analyzer mode unless the setting `allow_live_orders` is on (typed LIVE confirmation).
 
+## Trade manager (Trade tab)
+`src/script_openalgo/trader.py`: the strategies decide when; the manager decides whether and how much (side, limits, min journal score, lots or margin sizing, hard stop -25 %, square-off 15:15, daily loss flatten), places MARKET orders through OpenAlgo and confirms each fill (`orderstatus`). Modes: auto (job kind `trader`, one process per instrument, Stop = no new entries / Flatten all / kill) and simulate a cached day (job `tradersim`). Ledger tables `trader_sessions|trades|events`; daily review in the tab or `python -m script_openalgo.trader review --day D`. Costs (`costs.py`, Dhan rates, setting `costs`) are in every net P&L: backtests, journal (version 2) and manager. A LIVE-mode start needs `allow_live_orders` on and typed LIVE.
+
 ## Strategy options per run
 `GET /api/strategies/<id>/params` lists a strategy's simple UPPER_CASE constants (ast; bool -> checkbox, numbers whose comment says "0 = off" -> toggle + value), with the instrument's `strategy_overrides` value. The UI sends changed values as `params` ("NAME=value, ..."); Signals pass them as `--set`, backtests (Run / Run range) as the `STRATEGY_PARAMS` env var (JSON) which `instruments.apply_strategy_overrides` applies last. `report.write_results` stores them in summary.json, `runs.params` keeps them, and `strategy_stats` ignores runs with params.
 
@@ -33,7 +36,7 @@ Tab **Live**: setting `live_desk` holds the current desk (id, mode live/replay, 
 - A backtest **imports and replays the real strategy class** (`Strategy(client, clock, sleeper)`); never re-implement a strategy for a backtest. All tunables are module-level constants.
 - No lookahead: FakeClient returns only completed bars; fills are the close of the last completed 1m bar. `verify.py` re-derives every fill from the candles.
 - Regression after any change to `backtest_core/`: `nifty_direction_ce_pe` on 2026-10-16 must give NIFTY **-692.25** and BANKNIFTY **-1330.50** gross.
-- Gross P&L has no slippage/charges. For stocks read `net_pnl` (estimated spread). Never rank strategies on a low sample (< 20 days).
+- Gross P&L has no slippage/charges. `net_pnl` = gross - brokerage and charges (costs.py) - the estimated spread for stocks. Never rank strategies on a low sample (< 20 days).
 - Strategies run with OpenAlgo Analyzer (paper) ON until the user explicitly approves live trading. The Signals page's Act button refuses real orders unless the user has turned on `allow_live_orders`.
 - Knowledge files in the skill (`knowledge/*.md`) are append-only, dated.
 

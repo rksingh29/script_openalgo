@@ -310,7 +310,7 @@ def pick(con, instruments_, day=None, stage=1, max_picks=MAX_PICKS, labels_by=No
     avoid = [dict(e, reason=f"{e['condition']}: average {e['avg_net']:+.0f}/day over {e['days']} days, PF {e['profit_factor']}")
              for v in per.values() for e in v if e["avoid"]]
     return {"day": day, "stage": stage, "labels": labels, "picks": chosen, "avoid": avoid, "evaluated": per,
-            "note": "Success = strategy-days with net > 0 (backtests, paper fills; gross for indices). Thin evidence: a condition is "
+            "note": "Success = strategy-days with net > 0 (backtests, paper fills; net after brokerage + charges). Thin evidence: a condition is "
                     f"used only with {MIN_DAYS}+ days, otherwise wider conditions; ranks use the cautious lower end of the win rate."}
 
 

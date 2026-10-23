@@ -145,7 +145,7 @@ $("#seed").onclick = () => confirm("Research 10 unique strategies (one-time seed
 $("#daily").onclick = () => act(() => api("/api/research", { mode: "daily" }));
 $("#auto").onchange = (e) => act(() => api("/api/auto", { on: e.target.checked }));
 
-const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["selector", "Selector"], ["live", "Live"], ["signals", "Signals"], ["instruments", "Instruments"], ["jobs", "Jobs"], ["backup", "Backup"]];
+const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["selector", "Selector"], ["live", "Live"], ["trade", "Trade"], ["signals", "Signals"], ["instruments", "Instruments"], ["jobs", "Jobs"], ["backup", "Backup"]];
 function renderTabs() {
   $("#tabs").replaceChildren(...TABS.map(([k, l]) => h("button", { class: st.tab === k ? "on" : "", onclick: () => { st.tab = k; refresh(); } }, l)));
 }
@@ -636,6 +636,153 @@ function liveView() {
       h("button", { class: "small", onclick: () => { st.tab = "selector"; refresh(); } }, "All news (Selector tab)")),
     nl ? h("ul", {}, (nl.highlights || []).slice(0, 4).map(x => h("li", {}, x.text))) : h("div", { class: "mute" }, "Turn on the 09:00 / 13:00 / 15:00 schedule or press Run news now in the Selector tab."));
   return h("div", {}, soundBar, setup, status, newsCard, chart, feed, board);
+}
+
+// ---------- trade manager: auto-trade (paper via Analyzer unless LIVE is confirmed), simulate a day, review ----------
+function tradeState() {
+  return st.trade = st.trade || { form: null, settings: null, status: null, sel: null, review: null, reviewDay: "", reviewMode: "", simDate: "", showCosts: false };
+}
+async function loadTrade() {
+  const T = tradeState();
+  if (!T.settings) {
+    T.settings = await api("/api/trader/settings");
+    const f = Object.assign({}, T.settings.defaults, T.settings.saved || {});
+    f.instruments = f.instruments && !Array.isArray(f.instruments) ? f.instruments : {};
+    T.form = f;
+  }
+  T.status = await api("/api/trader/status" + (T.sel ? "?session=" + encodeURIComponent(T.sel) : ""));
+}
+function tradeView() {
+  const T = tradeState(), S = T.status, d = st.data;
+  if (!S || !T.form) return h("div", {}, "Loading…");
+  const F = T.form, A = S.active, om = S.openalgo;
+  const strategies = d.strategies.filter(x => !x.archived_at && x.file);
+  const insts = Object.keys(F.instruments);
+  const num = (k, label, w, tip) => h("label", { title: tip || "" }, label + " ", h("input", { type: "number", min: 0, value: F[k] ?? "", style: `width:${w || 70}px`, onchange: (e) => { F[k] = e.target.value === "" ? "" : +e.target.value; } }));
+  const body = () => ({ ...F, instruments: Object.fromEntries(Object.entries(F.instruments).filter(([, v]) => v.strategies.length)) });
+  // ---- mode strip ----
+  const modeChip = !om ? null : !om.ok ? h("span", { class: "neg" }, "OpenAlgo not reachable") : om.analyze_mode ? h("span", { class: "pos" }, "OpenAlgo Analyzer: PAPER orders") : h("b", { class: "neg" }, "OpenAlgo LIVE: REAL orders");
+  // ---- control panel when running ----
+  let control = null;
+  if (A) {
+    const ss = S.session && S.session.id === A.id ? S.session : null, c = (ss && ss.config) || {};
+    const b = ss ? ss.book : {};
+    control = h("div", { class: "card", style: "border-left:6px solid " + (A.note === "LIVE" ? "#c0262d" : "#0b7a46") },
+      h("div", { class: "row", style: "flex-wrap:wrap;gap:10px" }, h("b", { style: "font-size:16px" }, `AUTO-TRADE RUNNING · ${A.note || ""}`),
+        h("span", {}, `session ${A.id}`), ss && ss.stop_flag ? h("b", { class: "warn" }, ss.stop_flag === "stop" ? "STOPPING: no new entries, waiting for open positions to exit" : "FLATTENING: closing all positions") : null),
+      h("div", { class: "row small", style: "flex-wrap:wrap;gap:12px;margin:6px 0" },
+        h("span", {}, "trades ", h("b", {}, `${b.entries ?? 0} / ${c.max_trades_per_day ?? "–"}`)),
+        h("span", {}, "net today ", money(b.net), ` (stop at -${c.max_daily_loss ?? "–"})`),
+        h("span", {}, "losses in a row ", h("b", {}, `${b.streak ?? 0} / ${c.max_consecutive_losses ?? "–"}`)),
+        h("span", {}, "open ", h("b", {}, `${b.open ?? 0} / ${c.max_open_positions ?? "–"}`)),
+        (ss && ss.jobs || []).map(j => h("span", { class: "chip" }, j.label.split(" (")[0].replace("auto-trade ", ""), " ", badge(j.status, j.status === "running")))),
+      h("div", { class: "row", style: "gap:8px" },
+        h("button", { class: "primary", disabled: !!(ss && ss.stop_flag), title: "No new entries. Open positions keep their exits (strategy exit, hard stop, square-off); the manager ends when they are closed.",
+          onclick: () => confirm("Stop auto-trade? No new entries; open positions keep their exits, then the manager ends.") && act(() => api("/api/trader/stop", { how: "stop" })) }, "■ Stop auto-trade"),
+        h("button", { class: "danger", disabled: !!(ss && ss.stop_flag === "flatten"), title: "Close every open position now with MARKET orders, then end.",
+          onclick: () => confirm("FLATTEN ALL: sell every open position now at market and end auto-trade?") && act(() => api("/api/trader/stop", { how: "flatten" })) }, "✕ Flatten all now"),
+        h("button", { class: "small", title: "Emergency: end the processes immediately. Open positions are NOT closed: check them in OpenAlgo.",
+          onclick: () => prompt("KILL ends the manager at once and does NOT close open positions. Type KILL:") === "KILL" && act(() => api("/api/trader/stop", { how: "kill" })) }, "kill processes")));
+  }
+  // ---- setup ----
+  let setup = null;
+  if (!A) {
+    const toggleI = (i) => { if (F.instruments[i]) delete F.instruments[i]; else if (insts.length < 4) F.instruments[i] = { strategies: [], lots: 1 }; else alert("At most 4 instruments."); render(); };
+    const toggleS = (i, sid) => { const L = F.instruments[i].strategies; const k = L.indexOf(sid); if (k >= 0) L.splice(k, 1); else if (L.length < 8) L.push(sid); else alert("At most 8 strategies per instrument."); render(); };
+    const fromSelector = () => act(async () => {
+      if (!insts.length) throw new Error("tick the instruments first");
+      const r = await api("/api/selector/run", { instruments: insts, day: "" });
+      insts.forEach(i => F.instruments[i].strategies = []);
+      r.picks.forEach(p => { const x = strategies.find(y => y.slug === p.slug); if (x && F.instruments[p.instrument]) F.instruments[p.instrument].strategies.push(x.id); });
+      if (!r.picks.length) alert("The selector found no strategy with enough evidence for these instruments today.");
+    });
+    const start = () => {
+      const b = body();
+      if (!Object.keys(b.instruments).length) { alert("Tick at least one strategy on one instrument."); return; }
+      let confirmLive = "";
+      if (om && om.ok && !om.analyze_mode) {
+        confirmLive = prompt("OpenAlgo is in LIVE mode: the manager will place REAL orders with real money. Type LIVE to start:") || "";
+        if (confirmLive !== "LIVE") return;
+      } else if (!confirm(`Start auto-trade for today (paper, OpenAlgo Analyzer) on ${Object.keys(b.instruments).join(", ")}? Limits: ${b.max_trades_per_day} trades, daily loss ${b.max_daily_loss}, ${b.max_consecutive_losses} losses in a row, hard stop -${b.hard_stop_pct}%, square-off ${b.square_off}.`)) return;
+      act(async () => { T.sel = null; await api("/api/trader/start", { ...b, confirm: confirmLive }); });
+    };
+    const simulate = () => {
+      const b = body();
+      if (!Object.keys(b.instruments).length) { alert("Tick at least one strategy on one instrument."); return; }
+      if (!T.simDate) { alert("Choose the day to simulate (it must be cached: Data tab)."); return; }
+      act(async () => { const r = await api("/api/trader/simulate", { ...b, date: T.simDate }); T.sel = r.session; alert("Simulation started as a job (about a minute). The result appears below when it is done."); });
+    };
+    setup = h("div", { class: "card" }, h("b", {}, "Trade manager setup"),
+      h("div", { class: "row small", style: "flex-wrap:wrap;gap:4px;margin:6px 0" }, h("span", {}, "Instruments (up to 4):"),
+        d.instruments.map(i => h("label", { class: "chip", style: `cursor:pointer;${F.instruments[i] ? "outline:2px solid var(--acc)" : ""}` }, h("input", { type: "checkbox", checked: !!F.instruments[i], onchange: () => toggleI(i) }), " ", i))),
+      insts.length ? h("table", {}, h("thead", {}, h("tr", {}, [h("th", {}, "Strategy"), ...insts.map(i => h("th", {}, i))])),
+        h("tbody", {}, h("tr", {}, h("td", { class: "small" }, h("b", {}, "lots per trade")), ...insts.map(i => h("td", {}, h("input", { type: "number", min: 1, value: F.instruments[i].lots || 1, style: "width:50px", onchange: (e) => { F.instruments[i].lots = Math.max(1, +e.target.value || 1); } })))),
+          strategies.map(x => h("tr", {}, h("td", { class: "small" }, x.name), ...insts.map(i => h("td", {}, h("input", { type: "checkbox", checked: F.instruments[i].strategies.includes(x.id), onchange: () => toggleS(i, x.id) }))))))) : h("div", { class: "mute small" }, "Tick an instrument to choose its strategies."),
+      h("div", { class: "row small", style: "flex-wrap:wrap;gap:10px;margin-top:8px" },
+        h("label", {}, "side ", h("select", { onchange: (e) => { F.sides = e.target.value; } }, [["both", "CE and PE"], ["CE", "CE only (bullish)"], ["PE", "PE only (bearish)"]].map(([v, t]) => h("option", { value: v, selected: F.sides === v }, t)))),
+        h("label", {}, "size by ", h("select", { onchange: (e) => { F.sizing = e.target.value; render(); } }, [["lots", "lots per trade"], ["margin", "max margin per trade"]].map(([v, t]) => h("option", { value: v, selected: F.sizing === v }, t)))),
+        F.sizing === "margin" ? num("max_margin_per_trade", "max margin ₹", 90, "premium x lot size x lots must fit in this") : null,
+        num("max_lots", "max lots", 50, "cap on lots per trade"),
+        num("min_score", "min journal score", 50, "0 = no filter; entries below this score are refused"),
+        num("max_trades_per_day", "max trades/day", 50),
+        num("max_daily_loss", "max daily loss ₹", 70, "net after costs, realised; at this loss everything is flattened"),
+        num("max_consecutive_losses", "stop after losses in a row", 40),
+        num("max_open_positions", "max open", 40),
+        num("hard_stop_pct", "hard stop % of premium", 40, "0 = off"),
+        h("label", {}, "square-off ", h("input", { type: "time", value: F.square_off, onchange: (e) => { F.square_off = e.target.value; } }))),
+      h("div", { class: "row", style: "flex-wrap:wrap;gap:8px;margin-top:8px" },
+        h("button", { onclick: fromSelector }, "Use the selector's picks"),
+        h("button", { class: "primary", onclick: start, title: S.market === "open" || S.market === "pre-open" ? "" : "the market is " + S.market }, "▶ Start auto-trade (today)"),
+        h("span", { class: "mute" }, "or"),
+        h("input", { type: "date", value: T.simDate, onchange: (e) => { T.simDate = e.target.value; } }),
+        h("button", { onclick: simulate }, "Simulate that day")),
+      h("div", { class: "mute small", style: "margin-top:4px" }, "The strategies decide when to enter and exit; the manager buys options only, sizes them, refuses entries that break a limit or a filter, checks every order's fill with OpenAlgo, " +
+        "stops at the hard stop / square-off, and deducts brokerage + charges. Paper while OpenAlgo Analyzer is on."));
+  }
+  // ---- session view ----
+  const ss = S.session;
+  const sessPick = h("div", { class: "row small", style: "gap:6px;flex-wrap:wrap" }, h("b", {}, "Session "),
+    h("select", { onchange: (e) => { T.sel = e.target.value; refresh(); } }, S.sessions.map(x => h("option", { value: x.id, selected: ss && x.id === ss.id }, `${x.day} ${x.mode} ${x.status}${x.note ? " · " + x.note : ""} (${x.id})`))),
+    ss && ss.status !== "running" ? h("button", { class: "danger small", onclick: () => confirm(`Delete session ${ss.id} and its trades from the ledger?`) && act(async () => { await api(`/api/trader/sessions/${encodeURIComponent(ss.id)}/delete`, {}); T.sel = null; }) }, "Delete session") : null);
+  let ledger = h("div", { class: "card mute small" }, "No session yet: start auto-trade or simulate a day.");
+  if (ss) {
+    const tr = ss.trades || [];
+    const tot = tr.filter(t => t.status === "closed").reduce((a, t) => ({ g: a.g + (t.gross || 0), c: a.c + (t.costs || 0), n: a.n + (t.net || 0) }), { g: 0, c: 0, n: 0 });
+    ledger = h("div", { class: "card" }, sessPick,
+      h("div", { class: "row small", style: "gap:12px;margin:6px 0" }, h("span", {}, `${ss.mode === "sim" ? "SIMULATION" : "AUTO"} ${ss.day}`), h("span", {}, `${tr.length} trades`),
+        h("span", {}, "gross ", money(tot.g)), h("span", {}, "costs ", money(-tot.c)), h("b", {}, "net ", money(tot.n))),
+      h("table", {}, h("thead", {}, h("tr", {}, ["Instrument", "Strategy", "Symbol", "Lots", "Entry", "Exit", "Exit reason", "Score", "Gross", "Costs", "Net"].map(t => h("th", {}, t)))),
+        h("tbody", {}, tr.length ? tr.map(t => h("tr", {}, h("td", {}, t.instrument), h("td", { class: "small" }, t.strategy), h("td", { class: "small" }, t.symbol),
+          h("td", {}, `${t.lots} (${t.qty})`), h("td", { class: "small" }, `${t.entry_time} @ ${t.entry_price}`),
+          h("td", { class: "small" }, t.status === "open" ? h("b", { class: "warn" }, "OPEN") : `${t.exit_time} @ ${t.exit_price}`), h("td", { class: "small" }, t.exit_reason || ""),
+          h("td", { title: t.score_note || "" }, t.score ?? "–"), h("td", {}, money(t.gross)), h("td", { class: "small" }, t.costs ?? ""), h("td", {}, money(t.net)))) : h("tr", {}, h("td", { class: "mute" }, "no trades")))),
+      h("details", {}, h("summary", { class: "small" }, `Manager log (${(ss.events || []).length}; refused entries say why)`),
+        h("div", { class: "small", style: "max-height:300px;overflow:auto;font-family:monospace" }, (ss.events || []).filter(e => e.kind !== "log").map(e =>
+          h("div", { class: e.kind === "error" ? "neg" : e.kind === "skip" ? "mute" : e.kind === "entry" ? "pos" : "" }, `${(e.ts || "").slice(11, 19)} ${e.instrument || ""} ${e.strategy || ""} [${e.kind}] ${e.message}`)))));
+  }
+  // ---- daily review ----
+  const R = T.review;
+  const loadReview = () => act(async () => { T.review = await api(`/api/trader/review?day=${T.reviewDay || (ss && ss.day) || ""}&mode=${T.reviewMode}`); });
+  const agg = (o) => Object.entries(o || {}).map(([k, v]) => h("tr", {}, h("td", {}, k), h("td", {}, v.trades), h("td", {}, v.win_rate == null ? "–" : Math.round(v.win_rate * 100) + "%"), h("td", {}, money(v.gross)), h("td", {}, v.costs), h("td", {}, money(v.net))));
+  const review = h("div", { class: "card" }, h("div", { class: "row small", style: "gap:6px" }, h("b", {}, "Daily review"),
+      h("input", { type: "date", value: T.reviewDay || (ss && ss.day) || "", onchange: (e) => { T.reviewDay = e.target.value; } }),
+      h("select", { onchange: (e) => { T.reviewMode = e.target.value; } }, [["", "auto + simulations"], ["auto", "auto only"], ["sim", "simulations only"]].map(([v, t]) => h("option", { value: v, selected: T.reviewMode === v }, t))),
+      h("button", { class: "small", onclick: loadReview }, "Review")),
+    R ? h("div", {},
+      h("div", { class: "row small", style: "gap:12px;margin:6px 0" }, h("span", {}, `${R.day}: ${R.total.trades} trades, ${R.total.wins} wins`), h("span", {}, "gross ", money(R.total.gross)), h("span", {}, `costs ${R.total.costs}`), h("b", {}, "net ", money(R.total.net))),
+      h("table", {}, h("thead", {}, h("tr", {}, ["Strategy / instrument", "Trades", "Win rate", "Gross", "Costs", "Net"].map(t => h("th", {}, t)))), h("tbody", {}, agg(R.by_strategy), agg(R.by_instrument))),
+      h("div", { class: "small" }, "Exits: " + (Object.entries(R.exit_reasons).map(([k, v]) => `${k} ${v}`).join(", ") || "–")),
+      h("div", { class: "small" }, "Refused entries: " + (Object.entries(R.refused).map(([k, v]) => `${k} ×${v}`).join("; ") || "none")),
+      R.notes.length ? h("ul", { class: "small" }, R.notes.map(n => h("li", {}, n))) : h("div", { class: "mute small" }, "No observations.")) : h("div", { class: "mute small" }, "Pick a day and press Review (command line: python -m script_openalgo.trader review --day YYYY-MM-DD)."));
+  // ---- costs ----
+  const C = T.settings.costs;
+  const costs = h("div", { class: "card small" }, h("div", { class: "row" }, h("b", {}, `Costs (${C.broker}): ₹${C.brokerage_per_order}/order + STT ${C.stt_sell_pct}% sell + exchange ${C.exch_pct_nse}% NSE / ${C.exch_pct_bse}% BSE + SEBI ₹${C.sebi_per_crore}/cr + stamp ${C.stamp_buy_pct}% buy + GST ${C.gst_pct}%`),
+      h("span", { style: "flex:1" }), h("button", { class: "small", onclick: () => { T.showCosts = !T.showCosts; render(); } }, T.showCosts ? "Close" : "Edit rates")),
+    T.showCosts ? h("div", { class: "row", style: "flex-wrap:wrap;gap:8px;margin-top:6px" },
+      Object.keys(C).filter(k => k !== "broker").map(k => h("label", {}, k + " ", h("input", { type: "number", step: "any", value: C[k], style: "width:80px", onchange: (e) => { C[k] = +e.target.value; } }))),
+      h("button", { class: "primary small", onclick: () => act(async () => { T.settings.costs = await api("/api/trader/costs", C); T.showCosts = false; }) }, "Save"),
+      h("span", { class: "mute" }, "Check against a Dhan contract note. Applies to new backtests, the journal on its next rebuild, and the manager.")) : null);
+  return h("div", {}, h("div", { class: "card row small", style: "gap:10px" }, h("b", {}, "Trade manager"), modeChip, h("span", {}, `market ${S.market}`)), control, setup, ledger, review, costs);
 }
 
 // ---------- signals: run a strategy live or replay a cached day; its orders appear as signals you can act on ----------
@@ -1210,7 +1357,7 @@ function render() {
     return;
   }
   renderHeader(); renderTabs();
-  const v = { strategies: strategiesView, results: resultsView, data: dataView, instruments: instrumentsView, selector: selectorView, live: liveView, signals: signalsView, jobs: jobsView, backup: backupView }[st.tab]();
+  const v = { strategies: strategiesView, results: resultsView, data: dataView, instruments: instrumentsView, selector: selectorView, live: liveView, trade: tradeView, signals: signalsView, jobs: jobsView, backup: backupView }[st.tab]();
   const focus = document.activeElement && document.activeElement.id === "q";
   $("#view").replaceChildren(v);
   if (focus) { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
@@ -1226,6 +1373,7 @@ async function refresh() {
     if (!st.page && st.tab === "data") st.dataList = await api("/api/data");
     if (!st.page && st.tab === "instruments" && !st.instBusy) st.instList = await api("/api/instruments");
     if (!st.page && st.tab === "signals") await loadSignals();
+    if (!st.page && st.tab === "trade") await loadTrade();
     if (!st.page && st.tab === "selector" && !(st.selr && st.selr.busy)) await loadSelector();
     if (!st.page && st.tab === "live") { if (!st.selr || !st.selr.settings || Date.now() - (st.selr.at || 0) > 60000) { await loadSelector(); st.selr.at = Date.now(); } await loadLive(); }
     if (!st.page && st.tab === "backup" && !st.backupBusy) st.backup = { preview: await api("/api/backup/preview"), list: await api("/api/backup/list") };

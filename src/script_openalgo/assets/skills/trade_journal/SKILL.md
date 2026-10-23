@@ -17,7 +17,7 @@ Always run `journal build` first: it only adds runs not yet journaled (seconds).
 
 ## Columns
 - Identity: `slug` (strategy), `instrument`, `day`, `entry_time`, `exit_time`, `side` (CE = bullish buy, PE = bearish buy), `symbol`, `qty`, `run_id`, `code_hash`.
-- Outcome: `pnl` (gross), `net` (after the instrument's estimated spread; = gross for indices), `win` (net > 0), `hold_min`, `exit_reason`, `opt_mfe` / `opt_mae` (best / worst option P&L in rupees while held).
+- Outcome: `pnl` (gross), `net` (after brokerage + statutory charges from costs.py, and the estimated spread for stocks; journal version 2), `win` (net > 0), `hold_min`, `exit_reason`, `opt_mfe` / `opt_mae` (best / worst option P&L in rupees while held).
 - Features (context at entry, data completed before that minute): stored as JSON in `features`, with `feature_version`. **List them with `script-openalgo journal features`** (they are pluggable and grow over time). Groups today: time (minute_of_day, weekday, dte), underlying (move from open, day position, 15/30/60-min returns, ATR5, gap, previous range), vix (level, position in day range, 15/30-min change, change from open), volume (underlying and option volume vs their own average so far, option volume), oi (PCR of open interest near ATM, ATM call/put OI change, traded option OI change), premium (option price % of spot, ATM straddle % of spot as an implied-volatility proxy, option 15-min change).
 - `journal_days`: per strategy / instrument / day: trades, pnl, net, `day_range_pct`, `day_change_pct`, `gap_pct`, `vix_open`, `vix_close`, `vix_range`.
 
@@ -44,7 +44,7 @@ script-openalgo journal export --out journal.csv          # all features as colu
 
 ## Rules
 - Read-only: never write to the journal tables by hand; rebuild with `journal build [--rebuild]`.
-- Backtest results are paper fills at 1-minute closes, gross for indices and with an ESTIMATED spread for stocks; they flatter thin options (OFSS).
+- Backtest results are paper fills at 1-minute closes, net of Dhan brokerage + charges, with an ESTIMATED spread for stocks; they flatter thin options (OFSS).
 - Do not tune a strategy from journal buckets without re-testing the change on all cached days (see the strategy_builder skill and its lessons: a rule picked from one bad day usually describes that day only).
 - Far-expiry days (`nearest = 0`) are excluded unless `--include-far`; they behave differently.
 - Before finishing, if the analysis found something durable (a condition that clearly helps or hurts a strategy over many days), append it dated to the strategy_builder skill's `knowledge/lessons.md`.

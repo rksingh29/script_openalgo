@@ -579,3 +579,27 @@ Every field is stamped with the time it became known; the selector only uses fie
 - News agent runs at 09:00, 13:00 and 15:00 (weekdays, while the web app runs, when switched on); it shows market-wide highlights and news for all instruments; it is context only.
 - Strategy selection is based on the **selected instruments**, up to **8 picks** in total (so they can run at once).
 - Build order: selector first, then the Live desk (section 17).
+
+## 19. Trade manager: automatic option buying with money management (2026-10-24)
+
+### 19.1 Roles
+The strategies decide WHEN (their own entries and exits). The trade manager (`src/script_openalgo/trader.py`) decides WHETHER and HOW MUCH, places the orders through OpenAlgo and confirms every fill:
+- Inputs (Trade tab): up to 4 instruments, up to 8 strategies each (or the selector's picks), lots per trade or max margin per trade, side (CE / PE / both), minimum journal score.
+- Limits for the whole session (all instruments): max trades per day (6), max daily loss net after costs (2,000), max losses in a row (3), max open positions (3), safety cap on lots (5).
+- Protection: hard stop at -25 % of the premium, square-off 15:15, flatten everything at the daily loss limit.
+- Orders: MARKET, read back with `orderstatus` (15 s); rejected / unfilled orders are logged and the entry is not recorded; a failed exit keeps the position open and is retried every 10 s with a "CHECK THE POSITION IN OPENALGO" error.
+- Funds: entry refused if OpenAlgo `funds` shows less cash than premium x qty (+5 %).
+- Costs: Dhan rates (`costs.py`): 20 per executed order + STT 0.1 % sell + exchange 0.03503 % NSE / 0.0325 % BSE + SEBI 10/crore + stamp 0.003 % buy + GST 18 %; editable in the Trade tab. Also used by backtests (`net_pnl`) and the journal (version 2).
+
+### 19.2 Modes
+- **Auto** (market hours): one process per instrument (job kind `trader`), the strategies' threads use a `ManagedClient` whose BUYs go through the manager's checks and sizing; a refused BUY returns an error so the strategy simply has no position. Paper while OpenAlgo Analyzer is on; in LIVE mode the start needs `allow_live_orders` on AND typing LIVE.
+- **Simulate a day** (job kind `tradersim`): every chosen strategy is replayed on the cached day (FakeClient), its signals are merged in time order and passed through the same rules, sizing, hard stop (option 1m lows), square-off and costs.
+- **Stop controls**: Stop auto-trade (no new entries; open positions keep their exits; the manager ends when flat), Flatten all now (sell everything, then end), kill processes (emergency; positions NOT closed).
+
+### 19.3 Ledger and review
+Tables `trader_sessions`, `trader_trades`, `trader_events` in the workspace DB. Daily review (`trader.review`, Trade tab, `python -m script_openalgo.trader review --day D`): totals, per strategy and instrument, exit reasons, refused-entry reasons, observations (costs vs gross, hard stops, low-score entries).
+
+### 19.4 Next
+- MCP server (`script-openalgo mcp`): read-only status / review / suggestions for Claude; the kill switch only if the user allows it.
+- A first real paper session in market hours (the auto path was tested with a mock OpenAlgo client only).
+- Trailing / profit-protect exits as a manager option.

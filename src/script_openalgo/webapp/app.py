@@ -1014,6 +1014,245 @@ def live_feed():
 
 
 # ---------------- actions ----------------
+# ---------------- trade manager (auto-trade) ----------------
+def _trader_cfg(b):
+    """Validated manager config from the Trade page: instruments -> strategy ids -> slugs, limits as numbers."""
+    from script_openalgo import trader
+    cfg = dict(trader.DEFAULTS)
+    con = conn()
+    insts = {}
+    try:
+        for inst, ic in (b.get("instruments") or {}).items():
+            inst = str(inst).upper()
+            if inst not in instruments.INSTRUMENTS:
+                raise ValueError(f"unknown instrument {inst}")
+            slugs = []
+            for sid in ic.get("strategies") or []:
+                r = con.execute("SELECT slug FROM strategies WHERE id=?", (int(sid),)).fetchone()
+                if not r or not os.path.exists(os.path.join(db.STRATEGIES_DIR, r["slug"] + ".py")):
+                    raise ValueError(f"strategy {sid} not found or its code file is missing")
+                slugs.append(r["slug"])
+            if slugs:
+                insts[inst] = {"strategies": slugs[:MAX_GROUP], "lots": max(1, int(ic.get("lots") or 1))}
+    finally:
+        con.close()
+    if not insts:
+        raise ValueError("choose at least one strategy on one instrument")
+    if len(insts) > MAX_DESK_INSTRUMENTS:
+        raise ValueError(f"at most {MAX_DESK_INSTRUMENTS} instruments")
+    cfg["instruments"] = insts
+    for k in ("max_margin_per_trade", "max_lots", "min_score", "max_trades_per_day", "max_daily_loss", "max_consecutive_losses",
+              "max_open_positions", "hard_stop_pct"):
+        if b.get(k) not in (None, ""):
+            v = float(b[k])
+            if v < 0:
+                raise ValueError(f"{k} cannot be negative")
+            cfg[k] = int(v) if k != "max_margin_per_trade" else v
+    if b.get("sides") in ("CE", "PE", "both"):
+        cfg["sides"] = b["sides"]
+    if b.get("sizing") in ("lots", "margin"):
+        cfg["sizing"] = b["sizing"]
+    if cfg["sizing"] == "margin" and not cfg["max_margin_per_trade"]:
+        raise ValueError("sizing by margin needs max margin per trade")
+    sq = str(b.get("square_off") or "")
+    if re.fullmatch(r"\d\d:\d\d", sq) and "09:30" <= sq <= "15:20":
+        cfg["square_off"] = sq
+    if not cfg["max_daily_loss"]:
+        raise ValueError("a max daily loss is required for auto-trade")
+    return cfg
+
+
+def _trader_active(con):
+    """The running auto session (None if none); a session whose processes have all ended is closed here."""
+    from script_openalgo import trader
+    trader.ensure(con)
+    r = con.execute("SELECT * FROM trader_sessions WHERE mode='auto' AND status='running' ORDER BY started DESC LIMIT 1").fetchone()
+    if not r:
+        return None
+    jids = json.loads(db.get_setting(con, f"trader_jobs_{r['id']}", "[]") or "[]")
+    alive = [j for j in jids if (con.execute("SELECT status FROM jobs WHERE id=?", (j,)).fetchone() or {"status": ""})["status"] == "running"]
+    if not alive:
+        con.execute("UPDATE trader_sessions SET status='done', ended=? WHERE id=?", (db.now(), r["id"]))
+        con.commit()
+        return None
+    return dict(r)
+
+
+@app.get("/api/trader/settings")
+def trader_settings():
+    from script_openalgo import trader, costs
+    con = conn()
+    out = {"defaults": trader.DEFAULTS, "saved": json.loads(db.get_setting(con, "trader_form", "{}") or "{}"),
+           "costs": costs.settings(con), "allow_live_orders": db.get_setting(con, "allow_live_orders", "0") == "1"}
+    con.close()
+    return jsonify(out)
+
+
+@app.post("/api/trader/costs")
+def trader_costs_save():
+    from script_openalgo import costs
+    b = request.json or {}
+    try:
+        vals = {k: float(b[k]) for k in costs.DEFAULTS if k != "broker" and b.get(k) not in (None, "")}
+    except (TypeError, ValueError):
+        return err("cost rates must be numbers")
+    con = conn()
+    db.set_setting(con, "costs", json.dumps(vals))
+    out = costs.settings(con)
+    con.close()
+    return jsonify(out)
+
+
+@app.post("/api/trader/start")
+def trader_start():
+    """Start auto-trade for today: one process per instrument. Paper (OpenAlgo Analyzer ON) unless the user has turned on
+    allow_live_orders AND types LIVE for this start."""
+    import uuid
+    from script_openalgo import trader
+    b = request.json or {}
+    try:
+        cfg = _trader_cfg(b)
+    except (ValueError, TypeError) as e:
+        return err(str(e))
+    con = conn()
+    busy = _trader_active(con)
+    allow = db.get_setting(con, "allow_live_orders", "0") == "1"
+    con.close()
+    if busy:
+        return err("auto-trade is already running; stop it first", 409)
+    mode = _openalgo_mode()
+    if not mode.get("ok"):
+        return err(f"OpenAlgo not reachable: {mode.get('message')}", 503)
+    paper = bool(mode.get("analyze_mode"))
+    if not paper and (not allow or b.get("confirm") != "LIVE"):
+        return err("OpenAlgo is in LIVE mode (real orders). Turn on 'allow live orders' on the Signals page and type LIVE to "
+                   "start, or switch OpenAlgo to Analyzer (paper).", 403)
+    if _market_state() not in ("open", "pre-open"):
+        return err(f"market is {_market_state()}: use Simulate a day instead")
+    today = date.today().isoformat()
+    sid = f"auto-{today}-{uuid.uuid4().hex[:6]}"
+    con = conn()
+    trader.ensure(con)
+    con.execute("INSERT INTO trader_sessions VALUES(?,?,?,?,?,?,?,?)",
+                (sid, today, "auto", "running", json.dumps(cfg), db.now(), None, "paper (Analyzer)" if paper else "LIVE"))
+    db.set_setting(con, f"trader_stop_{sid}", "")
+    con.close()
+    jids = []
+    for inst in cfg["instruments"]:
+        cmd = [sys.executable, "-u", "-m", "script_openalgo.trader", "auto", "--session", sid, "--instrument", inst]
+        jids.append(jobs._launch(ws(), "trader", None, f"auto-trade {inst} ({sid}, {'paper' if paper else 'LIVE'})", cmd,
+                                 meta={"session": sid, "instrument": inst}))
+    con = conn()
+    db.set_setting(con, f"trader_jobs_{sid}", json.dumps(jids))
+    db.set_setting(con, "trader_form", json.dumps({k: v for k, v in b.items() if k != "confirm"}))
+    con.close()
+    return jsonify({"session": sid, "jobs": jids, "paper": paper})
+
+
+@app.post("/api/trader/stop")
+def trader_stop():
+    """how=stop: no new entries, open positions keep their exits (strategy, hard stop, square-off), then the manager ends.
+    how=flatten: close all open positions now, then end. how=kill: end the processes at once (positions NOT closed)."""
+    from script_openalgo import trader
+    how = (request.json or {}).get("how", "stop")
+    if how not in ("stop", "flatten", "kill"):
+        return err("how must be stop, flatten or kill")
+    con = conn()
+    s = _trader_active(con)
+    if not s:
+        con.close()
+        return err("auto-trade is not running", 404)
+    trader.event(con, s["id"], "info", f"user: {how}")
+    killed = 0
+    if how == "kill":
+        jids = json.loads(db.get_setting(con, f"trader_jobs_{s['id']}", "[]") or "[]")
+        killed = sum(bool(jobs.cancel(ws(), j)) for j in jids)
+        con.execute("UPDATE trader_sessions SET status='killed', ended=? WHERE id=?", (db.now(), s["id"]))
+        con.commit()
+    else:
+        db.set_setting(con, f"trader_stop_{s['id']}", how)
+    con.close()
+    return jsonify({"session": s["id"], "how": how, "killed": killed})
+
+
+@app.post("/api/trader/simulate")
+def trader_simulate():
+    """What the manager would have done on a cached day (a job; the result is a 'sim' session in the ledger)."""
+    import uuid
+    b = request.json or {}
+    try:
+        cfg = _trader_cfg(b)
+        day = date.fromisoformat(b.get("date") or "").isoformat()
+    except (ValueError, TypeError) as e:
+        return err(str(e) or "bad date")
+    sid = f"sim-{day}-{uuid.uuid4().hex[:6]}"
+    path = os.path.join(jobs.LOG_DIR, ws(), f"trader_{sid}.json")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f)
+    cmd = [sys.executable, "-u", "-m", "script_openalgo.trader", "simulate", "--day", day, "--config", path, "--session", sid]
+    jid = jobs._launch(ws(), "tradersim", None, f"trade manager simulation {day}", cmd, meta={"session": sid, "date": day})
+    con = conn()
+    db.set_setting(con, "trader_form", json.dumps({k: v for k, v in b.items() if k != "confirm"}))
+    con.close()
+    return jsonify({"session": sid, "job": jid})
+
+
+@app.get("/api/trader/status")
+def trader_status():
+    """The running (or a chosen, or the latest) session: config, trades, events, limits used; plus the session list."""
+    from script_openalgo import trader
+    con = conn()
+    trader.ensure(con)
+    active = _trader_active(con)
+    sid = request.args.get("session") or (active or {}).get("id")
+    if not sid:
+        r = con.execute("SELECT id FROM trader_sessions ORDER BY started DESC LIMIT 1").fetchone()
+        sid = r["id"] if r else None
+    out = {"active": active, "market": _market_state(), "openalgo": _cached_mode(), "session": None,
+           "sessions": db.rows(con, "SELECT id, day, mode, status, started, ended, note FROM trader_sessions ORDER BY started DESC LIMIT 40")}
+    s = con.execute("SELECT * FROM trader_sessions WHERE id=?", (sid,)).fetchone() if sid else None
+    if s:
+        s = dict(s)
+        s["config"] = json.loads(s["config"] or "{}")
+        s["stop_flag"] = db.get_setting(con, f"trader_stop_{sid}", "") or None
+        book = trader.Book(con, sid).summary()
+        s["book"] = {"entries": book["entries"], "open": len(book["open"]), "net": book["net"], "streak": book["streak"]}
+        s["trades"] = db.rows(con, "SELECT * FROM trader_trades WHERE session=? ORDER BY id", (sid,))
+        s["events"] = db.rows(con, "SELECT ts, instrument, strategy, kind, message FROM trader_events WHERE session=? ORDER BY id DESC LIMIT 300", (sid,))
+        jids = json.loads(db.get_setting(con, f"trader_jobs_{sid}", "[]") or "[]")
+        s["jobs"] = db.rows(con, f"SELECT id, label, status FROM jobs WHERE id IN ({','.join('?' * len(jids))})", jids) if jids else []
+        out["session"] = s
+    con.close()
+    return jsonify(out)
+
+
+@app.get("/api/trader/review")
+def trader_review():
+    from script_openalgo import trader
+    con = conn()
+    r = trader.review(con, request.args.get("day") or date.today().isoformat(), request.args.get("mode") or None)
+    con.close()
+    return jsonify(r)
+
+
+@app.post("/api/trader/sessions/<sid>/delete")
+def trader_session_delete(sid):
+    from script_openalgo import trader
+    con = conn()
+    trader.ensure(con)
+    s = con.execute("SELECT status FROM trader_sessions WHERE id=?", (sid,)).fetchone()
+    if not s or s["status"] == "running":
+        con.close()
+        return err("no such session" if not s else "stop the session first", 404 if not s else 409)
+    for t in ("trader_trades", "trader_events"):
+        con.execute(f"DELETE FROM {t} WHERE session=?", (sid,))
+    con.execute("DELETE FROM trader_sessions WHERE id=?", (sid,))
+    con.commit()
+    con.close()
+    return jsonify({"deleted": sid})
+
+
 @app.post("/api/research")
 def research():
     b = request.json or {}

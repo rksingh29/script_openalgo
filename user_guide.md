@@ -475,3 +475,18 @@ Open the **Live** tab during market hours (or any time for a rehearsal).
 **BSE instruments (SENSEX, BANKEX).** The Instruments tab also finds underlyings whose options trade on BSE (BFO). SENSEX is added like any other instrument (weekly expiries, lot 20); fetch or backfill its data in the Data tab before testing. Strategies automatically use the BFO exchange for its options.
 
 **Where is the news?** In the **Selector** tab (Market news card) and, as a short summary with the latest highlights, on the **Live** page. It is empty until the first news run (schedule 09:00 / 13:00 / 15:00, or Run news now).
+
+## 25. Trade tab: let the manager trade (paper first)
+
+The trade manager runs the chosen strategies and places their option BUY orders itself, with money management.
+
+1. **Set up**: tick up to 4 instruments, then the strategies for each (or **Use the selector's picks**). Set lots per trade (or size by max margin per trade), the side (CE / PE / both), and the limits: max trades per day, max daily loss (net after costs), losses in a row, max open positions, hard stop % of the premium, square-off time, minimum journal score (0 = no filter).
+2. **Simulate that day**: pick a cached day and press Simulate: the manager replays every chosen strategy on that day through the same rules and costs. The result appears as a "sim" session below (about a minute).
+3. **Start auto-trade (today)**: during market hours. While OpenAlgo's Analyzer is on, every order is paper. If OpenAlgo is in LIVE mode, the start is refused unless you have turned on "allow live orders" (Signals page) and type LIVE.
+4. **While it runs**: the panel shows trades used, net today, losses in a row and open positions.
+   - **■ Stop auto-trade**: no new entries; open positions still exit normally (strategy exit, hard stop, square-off); then the manager ends.
+   - **✕ Flatten all now**: sells every open position at market, then ends.
+   - **kill processes**: emergency only; it does NOT close positions (check OpenAlgo).
+5. **Ledger and log**: every trade with entry, exit, reason, journal score, gross, costs and net. The manager log says why each refused entry was refused.
+6. **Daily review**: choose the day and press Review: totals, per strategy and instrument, exits, refusals and observations.
+7. **Costs**: the rates (Dhan by default) are shown at the bottom; **Edit rates** to change them after checking a contract note.

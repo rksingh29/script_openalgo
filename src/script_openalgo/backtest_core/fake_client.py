@@ -230,7 +230,7 @@ class FakeClient:
         cost = px * int(quantity) * self.cfg.get("slippage_pct", 0) / 100      # estimated spread, booked in net P&L only
         self.orders.append({"id": oid, "time": self.clock.now(), "cycle": getattr(self.strategy, "cycle", 0),
                             "symbol": symbol, "action": action, "qty": int(quantity), "price": round(px, 2),
-                            "cost": round(cost, 2)})
+                            "cost": round(cost, 2), "exchange": exchange or self.cfg.get("opt_exchange", "NFO")})
         return {"status": "success", "orderid": oid}
 
     def orderstatus(self, order_id, strategy):

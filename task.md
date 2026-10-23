@@ -275,3 +275,15 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [ ] Live desk: shared per-instrument data runner (fewer OpenAlgo calls), market holidays from OpenAlgo
 - [x] SENSEX added (BSE_INDEX underlying, BFO weekly options, lot 20): discovery searches NFO and BFO, expiries from the expiry endpoint, OPT_EXCHANGE override; 2026-10-23 fetched, ORB +5461 (2026-10-23)
 - [x] Live page: chart buttons labelled (Chart: 📈 instrument) and placed above the feed; latest news highlights card
+
+## Phase 18: Trade manager (auto-trade) (BUILT 2026-10-24, see plan.md section 19)
+- [x] costs.py: Dhan brokerage + statutory charges; backtest net_pnl, multiday and journal (version 2) include them; regression gross unchanged (NIFTY -692.25, BANKNIFTY -1330.50), net NIFTY -879.18
+- [x] trader.py: rules (side, limits, min score), sizing (lots / margin, cap), hard stop, square-off, order fill check, funds check, ledger tables
+- [x] Simulate a day (job `tradersim`): 2026-10-23 NIFTY (PSAR + ORB) + SENSEX (ORB): 3 trades, net +9,930
+- [x] Auto-trade (job `trader`, one process per instrument) with Stop / Flatten all / kill; LIVE start needs allow_live_orders + typed LIVE
+- [x] Trade tab: setup, control panel, ledger, manager log, daily review, cost rates
+- [x] Daily review (UI + CLI)
+- [x] Auto path tested with a mock OpenAlgo client (fill read-back, trade limit, failed exit retried, flatten)
+- [ ] First paper session in market hours (Analyzer ON)
+- [ ] MCP server for suggestions (read-only; kill switch only if allowed)
+- [ ] Trailing / profit-protect exit option in the manager

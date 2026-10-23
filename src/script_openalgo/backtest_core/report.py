@@ -6,18 +6,35 @@ import re
 from collections import defaultdict
 
 
+def _cost_cfg():
+    """Cost settings of the workspace (brokerage + statutory charges, see script_openalgo/costs.py); defaults if no DB."""
+    from script_openalgo import costs
+    try:
+        from script_openalgo.strategy_db import db
+        con = db.connect()
+        try:
+            return costs.settings(con)
+        finally:
+            con.close()
+    except Exception:
+        return dict(costs.DEFAULTS)
+
+
 def build_trades(orders, charges_per_order=0.0):
     """Pair each BUY with the later SELL(s) of the same symbol, FIFO per (cycle, symbol).
     A single BUY may be closed by more than one SELL (e.g. a partial target exit followed by a
     later final exit, as in scale-out strategies); these are combined into one trade row with a
     quantity-weighted exit price so each entry still shows as exactly one trade."""
+    from script_openalgo import costs
+    cfg = _cost_cfg()
     open_legs = defaultdict(list)
     trades = []
     for o in orders:
         key = (o["cycle"], o["symbol"])
         if o["action"] == "BUY":
             open_legs[key].append({"entry_time": o["time"], "entry_price": o["price"],
-                                   "qty": o["qty"], "remaining": o["qty"], "cost": o.get("cost", 0.0),
+                                   "qty": o["qty"], "remaining": o["qty"], "cost": o.get("cost", 0.0), "sells": 0,
+                                   "exchange": o.get("exchange") or "NFO",
                                    "exit_notional": 0.0, "exit_qty": 0, "exit_time": None})
         else:
             qty_left = o["qty"]
@@ -28,19 +45,22 @@ def build_trades(orders, charges_per_order=0.0):
                 leg["exit_qty"] += take
                 leg["exit_notional"] += take * o["price"]
                 leg["exit_time"] = o["time"]
+                leg["sells"] += 1
                 leg["cost"] += o.get("cost", 0.0) * take / o["qty"] if o["qty"] else 0.0
                 qty_left -= take
                 if leg["remaining"] == 0:
                     open_legs[key].pop(0)
                     avg_exit = leg["exit_notional"] / leg["exit_qty"]
                     gross = (avg_exit - leg["entry_price"]) * leg["qty"]
+                    charges = costs.round_trip(leg["entry_price"], avg_exit, leg["qty"], leg["exchange"], cfg, orders=1 + leg["sells"])
                     trades.append({"cycle": key[0], "symbol": key[1], "qty": leg["qty"],
                                    "entry_time": leg["entry_time"].strftime("%H:%M:%S"),
                                    "entry_price": leg["entry_price"],
                                    "exit_time": leg["exit_time"].strftime("%H:%M:%S"),
                                    "exit_price": round(avg_exit, 2),
                                    "gross_pnl": round(gross, 2),
-                                   "net_pnl": round(gross - 2 * charges_per_order - leg["cost"], 2),
+                                   "net_pnl": round(gross - 2 * charges_per_order - leg["cost"] - charges, 2),
+                                   "costs": charges,
                                    **({"spread_cost": round(leg["cost"], 2)} if leg["cost"] else {})})
             # a leftover qty_left here (SELL bigger than any open BUY) would mean an order bug
             # upstream; nothing sensible to pair it with, so it is silently dropped like before.
@@ -78,6 +98,7 @@ def summarize(trades, orders, log_lines, unclosed):
         "gross_pnl": round(sum(pnls), 2),
         "net_pnl": round(sum(t["net_pnl"] for t in trades), 2),
         **({"spread_cost": round(sum(t.get("spread_cost", 0) for t in trades), 2)} if any(t.get("spread_cost") for t in trades) else {}),
+        "costs": round(sum(t.get("costs", 0) for t in trades), 2),
         "win_rate": round(len(wins) / len(pnls), 3) if pnls else None,
         "avg_win": round(sum(wins) / len(wins), 2) if wins else None,
         "avg_loss": round(sum(losses) / len(losses), 2) if losses else None,

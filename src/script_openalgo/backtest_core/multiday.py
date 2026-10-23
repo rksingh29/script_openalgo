@@ -131,8 +131,8 @@ def print_report(out):
     print(f"TOTAL  days {a['days']} | trades {a['trades']} ({a['zero_trade_days']} days without a trade) | P&L {a['total_pnl']:+.0f} | avg/day {a['avg_per_day']} | "
           f"win/loss/flat days {a['win_days']}/{a['loss_days']}/{a['flat_days']} | worst day {a['worst_day']} | max drawdown {a['max_drawdown']} | profit factor {a['profit_factor']}")
     if a.get("total_net") is not None and abs(a["total_net"] - a["total_pnl"]) > 0.5:
-        print(f"NET after the estimated spread (instrument slippage_pct): {a['total_net']:+.0f}  (gross {a['total_pnl']:+.0f})")
-        print("Gross P&L above; net uses an ESTIMATED spread, not real quotes. " + ("LOW SAMPLE (< 20 days)." if a["days"] < 20 else ""))
+        print(f"NET after brokerage + charges (and the estimated spread for stocks): {a['total_net']:+.0f}  (gross {a['total_pnl']:+.0f})")
+        print("Gross P&L above. Costs: see script_openalgo/costs.py (Dhan defaults, editable). " + ("LOW SAMPLE (< 20 days)." if a["days"] < 20 else ""))
     else:
         print("Gross P&L, no slippage or charges. " + ("LOW SAMPLE (< 20 days)." if a["days"] < 20 else ""))
 
@@ -160,7 +160,7 @@ def print_comparison(results):
     for r in results:
         if "error" in r:
             print(f"{r['strategy'][:38]:38} {r['instrument']:9} not run: {r['error'][:70]}")
-    print("P&L = gross (fills at candle closes). net = after the instrument's ESTIMATED spread (slippage_pct; 0 for indices), no charges. "
+    print("P&L = gross (fills at candle closes). net = after brokerage + statutory charges and, for stocks, the ESTIMATED spread. "
           "Few days = LOW SAMPLE: do not rank strategies on this. Only nearest-expiry days unless --allow-far.")
 
 
