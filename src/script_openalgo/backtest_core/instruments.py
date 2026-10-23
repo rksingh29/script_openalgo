@@ -161,6 +161,8 @@ def apply_strategy_overrides(strat, instrument, user_overrides=None):
     wanted["UNDERLYING"] = cfg["index_symbol"]
     if hasattr(strat, "INDEX_EXCHANGE"):
         wanted["INDEX_EXCHANGE"] = cfg["index_exchange"]
+    if hasattr(strat, "OPT_EXCHANGE"):
+        wanted["OPT_EXCHANGE"] = cfg.get("opt_exchange", "NFO")          # BFO for SENSEX / BANKEX options
     for k in list(orig):                                   # undo what an earlier instrument set
         setattr(strat, k, orig[k])
     for k, v in wanted.items():

@@ -273,3 +273,5 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [ ] Event calendar editing in the web app (today: edit strategy_db/events.csv by hand)
 - Phase 16 build notes (2026-10-23): Live tab with sound controls, desk setup (instruments x strategies or selector picks; live or rehearsal), status strip, feed cards with scores / Act / Dismiss, strategy board, chart per instrument; tested as a rehearsal (NIFTY+BANKNIFTY, 4 strategies, 7 BUY signals scored, stop, refusal of a second desk). Not yet tested: a real live session and the sounds in a browser
 - [ ] Live desk: shared per-instrument data runner (fewer OpenAlgo calls), market holidays from OpenAlgo
+- [x] SENSEX added (BSE_INDEX underlying, BFO weekly options, lot 20): discovery searches NFO and BFO, expiries from the expiry endpoint, OPT_EXCHANGE override; 2026-10-23 fetched, ORB +5461 (2026-10-23)
+- [x] Live page: chart buttons labelled (Chart: 📈 instrument) and placed above the feed; latest news highlights card

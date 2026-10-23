@@ -16,5 +16,23 @@
   "strategy_overrides": {},
   "strike_buffer": 3,
   "strike_step": 50
+ },
+ "SENSEX": {
+  "added": "2026-10-23T21:32:05",
+  "expiry_cycle": "weekly",
+  "index_exchange": "BSE_INDEX",
+  "index_symbol": "SENSEX",
+  "kind": "index",
+  "lot_size_seen": 20,
+  "max_expiry_gap_days": 8,
+  "min_option_coverage": 0.9,
+  "min_underlying_bars": 370,
+  "name": "SENSEX",
+  "note": "auto: nearest expiry 2026-10-29, 172 strikes listed, last close 73123.83, 375 bars on 2026-10-22; slippage_pct and min_option_coverage are defaults, adjust after a backfill",
+  "opt_exchange": "BFO",
+  "slippage_pct": 0.0,
+  "strategy_overrides": {},
+  "strike_buffer": 2,
+  "strike_step": 100
  }
 }

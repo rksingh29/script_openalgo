@@ -75,3 +75,7 @@ Anything else must first be added to the fake client in `backtest_core/fake_clie
 ### 2026-10-20: India VIX
 - Symbol `INDIAVIX`, exchange `NSE_INDEX` (search "VIX" finds it). `history(interval="1m", source="api")` returns 375 bars a day (09:15-15:29), `volume`/`oi` 0. One range call returns many days.
 - Cached as `data_cache/INDIAVIX_<date>.parquet` by `ensure_data` / `backfill` (`data_loader.ensure_vix`); context only, never part of a manifest's completeness. The Signals chart shows it in a lower panel and per signal.
+
+### 2026-10-23: SENSEX (BSE) options
+- Underlying `SENSEX` on `BSE_INDEX` (1m history ~375 bars/day); options on `BFO` (symbols like `SENSEX29OCT2673500CE`), weekly expiries (Thursday; `expiry` with exchange BFO lists 19), lot 20, strike step 100. `optionsymbol` with underlying SENSEX / exchange BSE_INDEX works. Search on BFO returns at most 500 rows (CE/PE of a few expiries only): take expiries from the `expiry` endpoint, not from search rows.
+- Strategies hard-code `OPT_EXCHANGE = "NFO"`; `instruments.apply_strategy_overrides` now sets it from the instrument (BFO for SENSEX) so live orders go to the right exchange.

@@ -33,13 +33,32 @@ def _exp(s):
 MAX_CHECKS = 15          # candidates checked for options per search (one exact NFO search each, ~0.3 s)
 
 
+OPT_EXCHANGES = ("NFO", "BFO")          # NSE and BSE derivatives (SENSEX / BANKEX options are on BFO)
+
+
 def _options_of(u):
-    """CE/PE contracts whose underlying is exactly `u` (an exact query stays under OpenAlgo's 500-result cap)."""
-    return [r for r in _search(u, "NFO") if r.get("instrumenttype") in ("CE", "PE") and (r.get("name") or "").upper() == u]
+    """(CE/PE contracts whose underlying is exactly `u`, their exchange); an exact query stays under OpenAlgo's 500-row cap.
+    NFO is tried first, then BFO."""
+    for ex in OPT_EXCHANGES:
+        rows = [r for r in _search(u, ex) if r.get("instrumenttype") in ("CE", "PE") and (r.get("name") or "").upper() == u]
+        if rows:
+            return rows, ex
+    return [], None
+
+
+def _underlying(u, opt_ex, eq=None):
+    """(kind, exchange, company name) of the underlying: an NSE stock, an NSE index or a BSE index."""
+    eq = eq if eq is not None else {r["symbol"].upper(): r for r in _search(u, "NSE") if r.get("instrumenttype") == "EQ"}
+    if u in eq:
+        return "stock", "NSE", eq[u]["name"]
+    for ex in ("NSE_INDEX", "BSE_INDEX") if opt_ex == "NFO" else ("BSE_INDEX", "NSE_INDEX"):
+        if u in {r["symbol"].upper() for r in _search(u, ex)}:
+            return "index", ex, u
+    return "index", "NSE_INDEX" if opt_ex == "NFO" else "BSE_INDEX", u
 
 
 def search(query):
-    """Underlyings matching `query` that have options on NFO: [{symbol, name, kind, exchange, lot_size, expiries, added}].
+    """Underlyings matching `query` that have options on NFO or BFO: [{symbol, name, kind, exchange, lot_size, expiries, added}].
     OpenAlgo's search returns at most 500 rows, so a broad NFO query can be filled by one underlying's contracts (HDFC ->
     HDFCAMC only). Candidates therefore come from NSE (stocks), NSE_INDEX (indices) and the NFO rows' underlyings, and each
     candidate is confirmed with an exact NFO query."""
@@ -47,18 +66,17 @@ def search(query):
     if len(q) < 2:
         return []
     eq = {r["symbol"].upper(): r for r in _search(q, "NSE") if r.get("instrumenttype") == "EQ"}
-    idx = {r["symbol"].upper() for r in _search(q, "NSE_INDEX")}
-    fno = {(r.get("name") or "").upper() for r in _search(q, "NFO")} - {""}
+    idx = {r["symbol"].upper() for ex in ("NSE_INDEX", "BSE_INDEX") for r in _search(q, ex)}
+    fno = {(r.get("name") or "").upper() for ex in OPT_EXCHANGES for r in _search(q, ex)} - {""}
     cands = sorted(fno | set(eq) | idx, key=lambda u: (not u.startswith(q), u not in fno, len(u), u))
     out = []
     for u in cands[:MAX_CHECKS]:
-        opts = _options_of(u)
+        opts, opt_ex = _options_of(u)
         if not opts:
             continue
-        stock = u in eq
+        kind, uex, name = _underlying(u, opt_ex, eq if u in eq else {})
         exps = sorted({_exp(r["expiry"]) for r in opts if _exp(r.get("expiry"))})
-        out.append({"symbol": u, "name": eq[u]["name"] if stock else u, "kind": "stock" if stock else "index",
-                    "exchange": "NSE" if stock else "NSE_INDEX", "lot_size": opts[0].get("lotsize"),
+        out.append({"symbol": u, "name": name, "kind": kind, "exchange": uex, "options_exchange": opt_ex, "lot_size": opts[0].get("lotsize"),
                     "expiries": [x.isoformat() for x in exps if x >= date.today()][:3],
                     "added": u in instruments.INSTRUMENTS})
         if len(out) >= MAX_RESULTS:
@@ -89,18 +107,22 @@ def _bars_per_day(symbol, exchange):
 def describe(symbol):
     """Settings for `symbol`, derived from its listed option contracts. Raises if it has no options on NFO."""
     u = symbol.strip().upper()
-    opts = _options_of(u)
+    opts, opt_ex = _options_of(u)
     if not opts:
-        raise RuntimeError(f"{u} has no option contracts on NFO in OpenAlgo (not an F&O underlying, or the master contract is not loaded)")
+        raise RuntimeError(f"{u} has no option contracts on NFO or BFO in OpenAlgo (not an F&O underlying, or the master contract is not loaded)")
     expiries = sorted({_exp(r["expiry"]) for r in opts if _exp(r.get("expiry"))})
+    code, b = dl._post("/api/v1/expiry", symbol=u, exchange=opt_ex, instrumenttype="options")   # full list (search is capped)
+    listed = sorted({_exp(e) for e in (b.get("data") or []) if _exp(e)}) if code == 200 else []
+    expiries = listed or expiries
     upcoming = [e for e in expiries if e >= date.today()] or expiries
     nearest = upcoming[0]
     gaps = [(b - a).days for a, b in zip(upcoming, upcoming[1:])]
     weekly = bool(gaps) and min(gaps) <= 8
-    eq = [r for r in _search(u, "NSE") if r.get("instrumenttype") == "EQ" and r["symbol"].upper() == u]
-    stock = bool(eq)
-    exchange = "NSE" if stock else "NSE_INDEX"
+    kind, exchange, company = _underlying(u, opt_ex)
+    stock = kind == "stock"
     strikes = sorted({float(r["strike"]) for r in opts if _exp(r.get("expiry")) == nearest and r.get("strike") and r["strike"] > 0})
+    if len(strikes) < 5:                                     # nearest expiry not in the (capped) search rows: any expiry
+        strikes = sorted({float(r["strike"]) for r in opts if r.get("strike") and r["strike"] > 0})
     close = _last_close(u, exchange)
     step = None
     if strikes:
@@ -112,10 +134,10 @@ def describe(symbol):
     lot = opts[0].get("lotsize")
     cfg = {
         "kind": "stock" if stock else "index",
-        "name": eq[0]["name"] if stock else u,
+        "name": company,
         "index_symbol": u,
         "index_exchange": exchange,
-        "opt_exchange": "NFO",
+        "opt_exchange": opt_ex,
         "strike_step": int(step) if step and float(step).is_integer() else step,
         "strike_buffer": 3 if stock else 2,
         "expiry_cycle": "weekly" if weekly else "monthly",

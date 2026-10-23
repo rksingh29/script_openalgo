@@ -616,8 +616,10 @@ function liveView() {
   // ---- chart per instrument ----
   let chart = null;
   if ((desk.jobs || []).length) {
-    const tabs = h("div", { class: "row" }, Object.keys(F.instruments).map(inst => h("button", { class: L.chart === inst ? "on primary" : "", onclick: () => { L.chart = inst; L.chartData = null; refresh(); } }, inst)),
-      L.chart ? h("button", { class: "small", onclick: () => { L.chart = null; L.chartData = null; render(); } }, "Hide chart") : h("span", { class: "mute small" }, " show a chart"));
+    const tabs = h("div", { class: "row" }, h("b", {}, "Chart:"),
+      Object.keys(F.instruments).map(inst => h("button", { class: L.chart === inst ? "on primary" : "", title: `show the ${inst} chart with every strategy's signals`,
+        onclick: () => { L.chart = inst; L.chartData = null; render(); loadLive().then(render).catch(e => alert(e.message)); } }, "📈 " + inst)),
+      L.chart ? h("button", { class: "small", onclick: () => { L.chart = null; L.chartData = null; render(); } }, "Hide chart") : h("span", { class: "mute small" }, "click an instrument to open its chart"));
     let body = null;
     const G = L.chartData;
     if (L.chart && G) {
@@ -627,7 +629,13 @@ function liveView() {
     } else if (L.chart) body = h("div", { class: "mute small" }, "loading chart…");
     chart = h("div", { class: "card" }, tabs, body);
   }
-  return h("div", {}, soundBar, setup, status, feed, board, chart);
+  if (!chart) chart = h("div", { class: "card mute small" }, "Charts: once a desk is running, a 📈 button per instrument opens its chart here.");
+  const nl = st.selr && st.selr.news && (st.selr.news.items || []).find(x => !x.error);
+  const newsCard = h("div", { class: "card small" }, h("div", { class: "row" }, h("b", {}, "Market news"),
+      nl ? h("span", { class: "mute" }, ` ${nl.date} ${nl.slot}`) : h("span", { class: "mute" }, " none collected yet"), h("span", { style: "flex:1" }),
+      h("button", { class: "small", onclick: () => { st.tab = "selector"; refresh(); } }, "All news (Selector tab)")),
+    nl ? h("ul", {}, (nl.highlights || []).slice(0, 4).map(x => h("li", {}, x.text))) : h("div", { class: "mute" }, "Turn on the 09:00 / 13:00 / 15:00 schedule or press Run news now in the Selector tab."));
+  return h("div", {}, soundBar, setup, status, newsCard, chart, feed, board);
 }
 
 // ---------- signals: run a strategy live or replay a cached day; its orders appear as signals you can act on ----------
@@ -1219,7 +1227,7 @@ async function refresh() {
     if (!st.page && st.tab === "instruments" && !st.instBusy) st.instList = await api("/api/instruments");
     if (!st.page && st.tab === "signals") await loadSignals();
     if (!st.page && st.tab === "selector" && !(st.selr && st.selr.busy)) await loadSelector();
-    if (!st.page && st.tab === "live") { if (!st.selr || !st.selr.settings) await loadSelector(); await loadLive(); }
+    if (!st.page && st.tab === "live") { if (!st.selr || !st.selr.settings || Date.now() - (st.selr.at || 0) > 60000) { await loadSelector(); st.selr.at = Date.now(); } await loadLive(); }
     if (!st.page && st.tab === "backup" && !st.backupBusy) st.backup = { preview: await api("/api/backup/preview"), list: await api("/api/backup/list") };
     render();
   } catch (e) { $("#banner").replaceChildren(h("div", { class: "banner" }, "Cannot reach the server: " + e.message)); }
