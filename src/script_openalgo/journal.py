@@ -1,18 +1,24 @@
-"""Trade journal: every backtested trade with the market context at its entry, for later decisions.
+"""Trade journal: every backtested trade with the market context at its entry, for later decisions and models.
 
-    script-openalgo journal build [--rebuild]                 # add trades of runs not yet in the journal (or all again)
-    script-openalgo journal query [filters] [--by FEATURE]    # win rate / P&L of matching trades, optionally per bucket
-    script-openalgo journal similar --strategy S --instrument I --time 11:30 --vix-pos 80 [...]   # nearest past trades
-    script-openalgo journal export [--out FILE.csv]           # all journal trades as CSV
+    script-openalgo journal build [--rebuild]               # journal new runs; recompute rows whose feature version is old
+    script-openalgo journal features                        # list the registered features
+    script-openalgo journal query [filters] [--by FEATURE]  # win rate / P&L of matching trades, optionally per bucket
+    script-openalgo journal similar --strategy S --time 11:30 --feature vix_pos=80 ...   # nearest past trades
+    script-openalgo journal edges [--strategy S]            # candidate conditions, with multiple-comparison control
+    script-openalgo journal export [--out FILE.csv]         # all trades with all features as CSV (model training data)
 
-Source: the CURRENT run of each (strategy, instrument, day): the newest run made with the strategy's default settings
-(the same runs the strategy stats use; nearest-expiry days and far-expiry days are both kept, flagged by `nearest`).
-Features use only data up to the minute of entry (the last completed 1m candle before it): no lookahead.
-The outcome columns (pnl, net, win, hold, mfe/mae, exit_reason) are what happened after entry.
-Tables (workspace strategy DB): journal_trades (one row per trade), journal_days (one row per strategy/instrument/day).
+Source: the CURRENT run of each (strategy, instrument, day): the newest run made with the strategy's default settings (the
+runs the strategy stats use). Features use only data completed before the entry minute (no lookahead); outcome columns
+(pnl, net, win, hold_min, exit_reason, opt_mfe, opt_mae) describe what happened after entry.
+
+Features are PLUGGABLE: a group is a function registered with @feature_group(name, version, {feature: description}).
+Its values are stored in the `features` JSON column, and every row records the FEATURE_VERSION it was built with, so
+adding or changing a group makes `journal build` recompute the history from the cached candles. To add one: write a
+function taking a Ctx and returning {feature: value}, decorate it, bump its version when its meaning changes.
 """
 import argparse
 import csv
+import hashlib
 import json
 import math
 import os
@@ -28,49 +34,66 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS journal_trades(
   id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER, strategy_id INTEGER, slug TEXT, instrument TEXT, day TEXT,
   trade_no INTEGER, side TEXT, symbol TEXT, qty INTEGER, entry_time TEXT, exit_time TEXT, entry_price REAL, exit_price REAL,
-  pnl REAL, net REAL, win INTEGER, hold_min REAL, exit_reason TEXT, opt_mfe REAL, opt_mae REAL,
-  minute_of_day INTEGER, weekday INTEGER, dte INTEGER, nearest INTEGER,
-  u_price REAL, u_from_open_pct REAL, u_day_pos REAL, u_ret15_pct REAL, u_ret30_pct REAL, u_ret60_pct REAL,
-  atr5_pct REAL, gap_pct REAL, prev_range_pct REAL,
-  vix REAL, vix_pos REAL, vix_chg15 REAL, vix_chg30 REAL, vix_from_open REAL,
-  code_hash TEXT, built TEXT, UNIQUE(run_id, trade_no));
+  pnl REAL, net REAL, win INTEGER, hold_min REAL, exit_reason TEXT, opt_mfe REAL, opt_mae REAL, dte INTEGER, nearest INTEGER,
+  code_hash TEXT, features TEXT, feature_version TEXT, built TEXT, UNIQUE(run_id, trade_no));
 CREATE INDEX IF NOT EXISTS jt_strategy ON journal_trades(slug, instrument);
 CREATE TABLE IF NOT EXISTS journal_days(
   run_id INTEGER PRIMARY KEY, strategy_id INTEGER, slug TEXT, instrument TEXT, day TEXT, trades INTEGER, pnl REAL, net REAL,
   day_range_pct REAL, day_change_pct REAL, gap_pct REAL, vix_open REAL, vix_close REAL, vix_range REAL, dte INTEGER, nearest INTEGER,
-  built TEXT);
+  feature_version TEXT, built TEXT);
 """
-
-FEATURES = ["minute_of_day", "weekday", "dte", "u_from_open_pct", "u_day_pos", "u_ret15_pct", "u_ret30_pct", "u_ret60_pct",
-            "atr5_pct", "gap_pct", "prev_range_pct", "vix", "vix_pos", "vix_chg15", "vix_chg30", "vix_from_open"]
-BUCKETS = {   # --by FEATURE: bucket edges (value < edge goes to that bucket)
-    "minute_of_day": [600, 660, 720, 780, 840, 931], "vix_pos": [20, 40, 60, 80, 90, 101], "vix": [12, 14, 16, 18, 22, 99],
-    "vix_chg15": [-0.2, -0.05, 0.05, 0.2, 99], "vix_chg30": [-0.3, -0.1, 0.1, 0.3, 99], "u_day_pos": [10, 30, 50, 70, 90, 101],
-    "u_from_open_pct": [-1, -0.5, -0.2, 0.2, 0.5, 1, 99], "u_ret30_pct": [-0.4, -0.15, 0, 0.15, 0.4, 99],
-    "atr5_pct": [0.08, 0.12, 0.18, 0.25, 99], "dte": [2, 5, 10, 20, 40, 999], "gap_pct": [-0.5, -0.15, 0.15, 0.5, 99],
-    "weekday": [1, 2, 3, 4, 5], "side": None, "exit_reason": None, "instrument": None, "slug": None, "day": None,
-}
+OUTCOME = ["pnl", "net", "win", "hold_min", "exit_reason", "opt_mfe", "opt_mae"]
 
 
-def ensure(con):
-    con.executescript(SCHEMA)
+# ---------------- feature registry ----------------
+GROUPS = []          # [(name, version, {feature: description}, function)]
 
 
-# ---------------- feature computation ----------------
-def _load(cache, name, day):
-    p = os.path.join(cache, f"{name}_{day}.parquet")
-    if not os.path.exists(p):
-        return None
-    df = pd.read_parquet(p)
-    if "dt" in df.columns:
-        df = df.set_index("dt")
-    df.index = pd.to_datetime(df.index)
-    return df.sort_index()
+def feature_group(name, version, features):
+    def deco(fn):
+        GROUPS.append((name, version, features, fn))
+        return fn
+    return deco
 
 
-def _upto(df, ts):
-    """Rows of completed 1m candles before ts (a candle stamped T is complete at T+1 min)."""
-    return df.loc[: ts - pd.Timedelta(minutes=1)] if df is not None else None
+def feature_names():
+    return [f for _, _, feats, _ in GROUPS for f in feats]
+
+
+def feature_version():
+    sig = ";".join(f"{n}:{v}:{','.join(f)}" for n, v, f, _ in GROUPS)
+    return hashlib.sha1(sig.encode()).hexdigest()[:10]
+
+
+class Ctx:
+    """What a feature function may look at: candles of `day` up to (not including) the entry minute, and the trade."""
+
+    def __init__(self, cache, instrument, cfg, day, entry_time, trade, run, loader):
+        self.cache, self.instrument, self.cfg, self.day = cache, instrument, cfg, day
+        self.d = date.fromisoformat(day)
+        self.ts = pd.Timestamp(f"{day} {entry_time[:5]}")
+        self.trade, self.run, self._load = trade, run, loader
+
+    def series(self, name):
+        return self._load(name, self.day)
+
+    def upto(self, name):
+        """Completed 1m candles of `name` before the entry minute (a candle stamped T is complete at T+1 min)."""
+        df = self.series(name)
+        return df.loc[: self.ts - pd.Timedelta(minutes=1)] if df is not None else None
+
+    def daily(self):
+        return self._load("daily_" + self.instrument.upper(), None)
+
+    def manifest(self):
+        return self._load("manifest", self.day, instrument=self.instrument)
+
+    def option(self, strike, ot):
+        from script_openalgo.backtest_core import data_loader as dl
+        m = self.manifest() or {}
+        if not m.get("expiry"):
+            return None
+        return dl.option_symbol(self.instrument, date.fromisoformat(m["expiry"]), strike, ot)
 
 
 def _pct(a, b):
@@ -99,62 +122,199 @@ def _atr5(sub, n=14):
     return float(a)
 
 
-def _daily(cache, instrument):
-    p = os.path.join(cache, f"daily_{instrument.upper()}.parquet")
-    return pd.read_parquet(p) if os.path.exists(p) else None
+def _rel15(sub, col="volume"):
+    """Last 15 minutes of `col` against the average 15-minute amount so far today (needs 45+ minutes)."""
+    if sub is None or len(sub) < 45 or col not in sub:
+        return None
+    v = sub[col].astype(float)
+    last = float(v.iloc[-15:].sum())
+    avg = float(v.sum()) / len(v) * 15
+    return round(last / avg, 3) if avg > 0 else None
 
 
-def trade_features(cache, instrument, cfg, day, t, daily):
-    """Context at entry time `t` (HH:MM:SS) of `day`, from data completed before that minute."""
-    d = date.fromisoformat(day)
-    ts = pd.Timestamp(f"{day} {t[:5]}")
-    out = {"minute_of_day": ts.hour * 60 + ts.minute, "weekday": d.weekday()}
-    u = _load(cache, cfg["index_symbol"], day)
-    sub = _upto(u, ts)
-    if sub is not None and len(sub):
-        price, opn = float(sub["close"].iloc[-1]), float(sub["open"].iloc[0])
-        hi, lo = float(sub["high"].max()), float(sub["low"].min())
-        out.update({"u_price": price, "u_from_open_pct": _pct(price, opn),
-                    "u_day_pos": round((price - lo) / (hi - lo) * 100, 2) if hi > lo else None,
-                    "u_ret15_pct": _pct(price, _close_ago(sub, ts, 15)), "u_ret30_pct": _pct(price, _close_ago(sub, ts, 30)),
-                    "u_ret60_pct": _pct(price, _close_ago(sub, ts, 60))})
-        a = _atr5(sub)
-        out["atr5_pct"] = round(a / price * 100, 4) if a else None
-        if daily is not None and len(daily):
-            prev = daily[daily.index < pd.Timestamp(d)]
-            if len(prev):
-                pc, ph, pl = float(prev["close"].iloc[-1]), float(prev["high"].iloc[-1]), float(prev["low"].iloc[-1])
-                out["gap_pct"] = _pct(opn, pc)
-                out["prev_range_pct"] = round((ph - pl) / pc * 100, 4) if pc else None
-    v = _upto(_load(cache, "INDIAVIX", day), ts)
-    if v is not None and len(v):
-        last, vo = float(v["close"].iloc[-1]), float(v["open"].iloc[0])
-        vh, vl = float(v["high"].max()), float(v["low"].min())
-        c15, c30 = _close_ago(v, ts, 15), _close_ago(v, ts, 30)
-        out.update({"vix": last, "vix_pos": round((last - vl) / (vh - vl) * 100, 2) if vh - vl >= 0.1 else None,
-                    "vix_chg15": round(last - c15, 4) if c15 else None, "vix_chg30": round(last - c30, 4) if c30 else None,
-                    "vix_from_open": round(last - vo, 4)})
+@feature_group("time", 1, {"minute_of_day": "minutes since midnight at entry (09:15 = 555)", "weekday": "0 = Monday",
+                           "dte": "days to expiry of the traded contract"})
+def f_time(c):
+    return {"minute_of_day": c.ts.hour * 60 + c.ts.minute, "weekday": c.d.weekday(), "dte": c.run.get("dte")}
+
+
+@feature_group("underlying", 1, {
+    "u_price": "underlying price at entry", "u_from_open_pct": "% move since the open",
+    "u_day_pos": "position in the day's range so far (0 = low, 100 = high)", "u_ret15_pct": "% move, last 15 min",
+    "u_ret30_pct": "% move, last 30 min", "u_ret60_pct": "% move, last 60 min",
+    "atr5_pct": "ATR(14) of 5m candles, % of price", "gap_pct": "open vs previous close, %",
+    "prev_range_pct": "previous day's high-low range, % of its close"})
+def f_underlying(c):
+    sub = c.upto(c.cfg["index_symbol"])
+    out = {}
+    if sub is None or not len(sub):
+        return out
+    price, opn = float(sub["close"].iloc[-1]), float(sub["open"].iloc[0])
+    hi, lo = float(sub["high"].max()), float(sub["low"].min())
+    out.update({"u_price": price, "u_from_open_pct": _pct(price, opn),
+                "u_day_pos": round((price - lo) / (hi - lo) * 100, 2) if hi > lo else None,
+                "u_ret15_pct": _pct(price, _close_ago(sub, c.ts, 15)), "u_ret30_pct": _pct(price, _close_ago(sub, c.ts, 30)),
+                "u_ret60_pct": _pct(price, _close_ago(sub, c.ts, 60))})
+    a = _atr5(sub)
+    out["atr5_pct"] = round(a / price * 100, 4) if a else None
+    dly = c.daily()
+    if dly is not None and len(dly):
+        prev = dly[dly.index < pd.Timestamp(c.d)]
+        if len(prev):
+            pc, ph, pl = float(prev["close"].iloc[-1]), float(prev["high"].iloc[-1]), float(prev["low"].iloc[-1])
+            out["gap_pct"] = _pct(opn, pc)
+            out["prev_range_pct"] = round((ph - pl) / pc * 100, 4) if pc else None
     return out
 
 
-def _excursion(cache, symbol, day, t_in, t_out, entry, qty):
-    """Best / worst option P&L (rupees) while the trade was open, from the option's 1m candles."""
-    o = _load(cache, symbol, day)
-    if o is None:
-        return None, None
-    seg = o.loc[pd.Timestamp(f"{day} {t_in[:5]}"): pd.Timestamp(f"{day} {t_out[:5]}")]
-    if not len(seg):
-        return None, None
-    return round((float(seg["high"].max()) - entry) * qty, 2), round((float(seg["low"].min()) - entry) * qty, 2)
+@feature_group("vix", 1, {"vix": "India VIX at entry", "vix_pos": "VIX position in its range so far today (0-100)",
+                          "vix_chg15": "VIX change, last 15 min (points)", "vix_chg30": "VIX change, last 30 min (points)",
+                          "vix_from_open": "VIX change since the open (points)"})
+def f_vix(c):
+    v = c.upto("INDIAVIX")
+    if v is None or not len(v):
+        return {}
+    last, vo = float(v["close"].iloc[-1]), float(v["open"].iloc[0])
+    vh, vl = float(v["high"].max()), float(v["low"].min())
+    c15, c30 = _close_ago(v, c.ts, 15), _close_ago(v, c.ts, 30)
+    return {"vix": last, "vix_pos": round((last - vl) / (vh - vl) * 100, 2) if vh - vl >= 0.1 else None,
+            "vix_chg15": round(last - c15, 4) if c15 else None, "vix_chg30": round(last - c30, 4) if c30 else None,
+            "vix_from_open": round(last - vo, 4)}
+
+
+@feature_group("volume", 1, {"u_vol_rel15": "underlying volume, last 15 min vs its average 15 min so far today",
+                             "opt_vol_rel15": "traded option's volume, last 15 min vs its average so far today",
+                             "opt_vol15": "traded option's volume in the last 15 min (units)"})
+def f_volume(c):
+    out = {"u_vol_rel15": _rel15(c.upto(c.cfg["index_symbol"]))}
+    o = c.upto(c.trade["symbol"])
+    if o is not None and len(o):
+        out["opt_vol_rel15"] = _rel15(o)
+        out["opt_vol15"] = float(o["volume"].iloc[-15:].sum())
+    return out
+
+
+def _atm(c, price):
+    m = c.manifest() or {}
+    ks = [k for k in m.get("strikes", []) if c.series(c.option(k, "CE")) is not None and c.series(c.option(k, "PE")) is not None]
+    return min(ks, key=lambda k: abs(k - price)) if ks else None
+
+
+def _last(df, col="close"):
+    return float(df[col].iloc[-1]) if df is not None and len(df) else None
+
+
+@feature_group("oi", 1, {"pcr_oi": "put/call ratio of open interest, strikes within 3 steps of ATM",
+                         "atm_ce_oi_chg30_pct": "ATM call OI change, last 30 min, %", "atm_pe_oi_chg30_pct": "ATM put OI change, last 30 min, %",
+                         "opt_oi_chg30_pct": "traded option's OI change, last 30 min, %"})
+def f_oi(c):
+    sub = c.upto(c.cfg["index_symbol"])
+    price = _last(sub)
+    if price is None:
+        return {}
+    m = c.manifest() or {}
+    strikes = sorted(m.get("strikes", []))
+    atm = _atm(c, price)
+    out = {}
+    if atm is not None:
+        i = strikes.index(atm)
+        near = strikes[max(0, i - 3): i + 4]
+        ce = sum(_last(c.upto(c.option(k, "CE")), "oi") or 0 for k in near)
+        pe = sum(_last(c.upto(c.option(k, "PE")), "oi") or 0 for k in near)
+        out["pcr_oi"] = round(pe / ce, 4) if ce else None
+        for ot in ("CE", "PE"):
+            df = c.upto(c.option(atm, ot))
+            if df is not None and len(df) > 31:
+                a, b = float(df["oi"].iloc[-1]), float(df["oi"].iloc[-31])
+                out[f"atm_{ot.lower()}_oi_chg30_pct"] = _pct(a, b) if b else None
+    o = c.upto(c.trade["symbol"])
+    if o is not None and len(o) > 31 and float(o["oi"].iloc[-31]):
+        out["opt_oi_chg30_pct"] = _pct(float(o["oi"].iloc[-1]), float(o["oi"].iloc[-31]))
+    return out
+
+
+@feature_group("premium", 1, {"opt_prem_pct": "traded option's price before entry, % of the underlying",
+                              "straddle_pct": "ATM call + put price, % of the underlying (implied-volatility proxy)",
+                              "opt_ret15_pct": "traded option's % change, last 15 min"})
+def f_premium(c):
+    price = _last(c.upto(c.cfg["index_symbol"]))
+    if price is None:
+        return {}
+    out = {}
+    o = c.upto(c.trade["symbol"])
+    if o is not None and len(o):
+        p = float(o["close"].iloc[-1])
+        out["opt_prem_pct"] = round(p / price * 100, 4)
+        out["opt_ret15_pct"] = _pct(p, _close_ago(o, c.ts, 15))
+    atm = _atm(c, price)
+    if atm is not None:
+        ce, pe = _last(c.upto(c.option(atm, "CE"))), _last(c.upto(c.option(atm, "PE")))
+        if ce and pe:
+            out["straddle_pct"] = round((ce + pe) / price * 100, 4)
+    return out
+
+
+# ---------------- data loading (one build reads each file once) ----------------
+def make_loader(cache):
+    memo = {}
+
+    def load(name, day, instrument=None):
+        key = (name, day, instrument)
+        if key in memo:
+            return memo[key]
+        val = None
+        if name == "manifest":
+            p = os.path.join(cache, f"manifest_{instrument.upper()}_{day}.json")
+            val = json.load(open(p)) if os.path.exists(p) else None
+        elif name and name.startswith("daily_"):
+            p = os.path.join(cache, f"{name}.parquet")
+            val = pd.read_parquet(p) if os.path.exists(p) else None
+        elif name:
+            p = os.path.join(cache, f"{name}_{day}.parquet")
+            if os.path.exists(p):
+                df = pd.read_parquet(p)
+                if "dt" in df.columns:
+                    df = df.set_index("dt")
+                df.index = pd.to_datetime(df.index)
+                val = df.sort_index()
+        if len(memo) > 4000:                                 # keep memory bounded on big rebuilds
+            memo.clear()
+        memo[key] = val
+        return val
+    return load
+
+
+def compute_features(ctx):
+    out = {}
+    for name, _, _, fn in GROUPS:
+        try:
+            out.update({k: v for k, v in (fn(ctx) or {}).items() if v is not None and not (isinstance(v, float) and math.isnan(v))})
+        except Exception as e:                               # one broken feature must not stop the journal
+            out[f"_error_{name}"] = str(e)[:120]
+    return out
+
+
+# ---------------- build ----------------
+def ensure(con):
+    cols = {r[1] for r in con.execute("PRAGMA table_info(journal_trades)")}
+    if cols and "features" not in cols:                      # v1 layout (one column per feature): derived data, rebuild
+        con.execute("DROP TABLE journal_trades")
+        con.execute("DROP TABLE IF EXISTS journal_days")
+    con.executescript(SCHEMA)
+
+
+def current_runs(con):
+    """Newest default-settings run per (strategy, instrument, day, executor): the runs the stats use."""
+    return db.rows(con, "SELECT r.*, s.slug FROM runs r JOIN strategies s ON s.id=r.strategy_id WHERE r.id IN ("
+                        "SELECT MAX(id) FROM runs WHERE COALESCE(params, '') IN ('', '{}') GROUP BY strategy_id, instrument, day, executor)")
 
 
 def _exit_reasons(result_dir):
-    """{(symbol, HH:MM): reason} from the SELL lines of the run's log."""
-    out = {}
+    """{(symbol, HH:MM): reason} from the run's log (SELL lines, or a separate EXIT line in the same minutes)."""
+    out, sells, exits = {}, [], {}
     p = os.path.join(result_dir, "log.txt")
     if not os.path.exists(p):
         return out
-    sells, exits = [], {}
     clean = lambda s: re.sub(r"\s*\(.*?\)", "", s).strip()[:80]
     for line in open(p, encoding="utf-8", errors="replace"):
         line = line.strip()
@@ -162,7 +322,7 @@ def _exit_reasons(result_dir):
         if m:
             out.setdefault((m.group(2), m.group(1)), clean(m.group(3)))
             continue
-        m = re.match(r"\S+ (\d\d:\d\d):\d\d \| SELL (\S+) ", line)             # reason on a separate EXIT line
+        m = re.match(r"\S+ (\d\d:\d\d):\d\d \| SELL (\S+) ", line)
         if m:
             sells.append((m.group(2), m.group(1)))
             continue
@@ -182,95 +342,32 @@ def _exit_reasons(result_dir):
 
 
 def _mins(a, b):
-    ta, tb = datetime.strptime(a[:8], "%H:%M:%S"), datetime.strptime(b[:8], "%H:%M:%S")
-    return round((tb - ta).total_seconds() / 60, 1)
-
-
-# ---------------- build ----------------
-def current_runs(con):
-    """Newest default-settings run per (strategy, instrument, day, executor): the runs the stats use."""
-    return db.rows(con, "SELECT r.*, s.slug FROM runs r JOIN strategies s ON s.id=r.strategy_id WHERE r.id IN ("
-                        "SELECT MAX(id) FROM runs WHERE COALESCE(params, '') IN ('', '{}') GROUP BY strategy_id, instrument, day, executor)")
-
-
-def build(con=None, rebuild=False, cache=None, quiet=False):
-    """Add journal rows for current runs not yet journaled (and drop rows of runs that are no longer current)."""
-    from script_openalgo.backtest_core import instruments
-    own = con is None
-    con = con or db.connect()
-    ensure(con)
-    cache = cache or db.ws_paths()[1]
-    if rebuild:
-        con.execute("DELETE FROM journal_trades")
-        con.execute("DELETE FROM journal_days")
-    runs = current_runs(con)
-    keep = {r["id"] for r in runs}
-    have = {r[0] for r in con.execute("SELECT run_id FROM journal_days")}
-    stale = have - keep
-    for rid in stale:                                        # superseded by a newer run or deleted
-        con.execute("DELETE FROM journal_trades WHERE run_id=?", (rid,))
-        con.execute("DELETE FROM journal_days WHERE run_id=?", (rid,))
-    added_runs = added_trades = 0
-    daily_cache = {}
-    for r in runs:
-        if r["id"] in have and r["id"] not in stale:
-            continue
-        rd = r["result_dir"]
-        if not rd or not os.path.isdir(rd) or r["instrument"] not in instruments.INSTRUMENTS:
-            continue
-        cfg = instruments.get(r["instrument"])
-        daily = daily_cache.setdefault(r["instrument"], _daily(cache, r["instrument"]))
-        tp = os.path.join(rd, "trades.csv")
-        trades = list(csv.DictReader(open(tp, encoding="utf-8"))) if os.path.exists(tp) else []
-        reasons = _exit_reasons(rd)
-        now = datetime.now().isoformat(timespec="seconds")
-        net_total = 0.0
-        for n, t in enumerate(trades, 1):
-            f = trade_features(cache, r["instrument"], cfg, r["day"], t["entry_time"], daily)
-            entry, exitp, qty = float(t["entry_price"]), float(t["exit_price"]), int(float(t["qty"]))
-            pnl = float(t["gross_pnl"])
-            net = float(t.get("net_pnl") or pnl)
-            net_total += net
-            mfe, mae = _excursion(cache, t["symbol"], r["day"], t["entry_time"], t["exit_time"], entry, qty)
-            row = {"run_id": r["id"], "strategy_id": r["strategy_id"], "slug": r["slug"], "instrument": r["instrument"], "day": r["day"],
-                   "trade_no": n, "side": "CE" if t["symbol"].endswith("CE") else "PE", "symbol": t["symbol"], "qty": qty,
-                   "entry_time": t["entry_time"], "exit_time": t["exit_time"], "entry_price": entry, "exit_price": exitp,
-                   "pnl": pnl, "net": net, "win": 1 if net > 0 else 0, "hold_min": _mins(t["entry_time"], t["exit_time"]),
-                   "exit_reason": reasons.get((t["symbol"], t["exit_time"][:5])) or reasons.get((t["symbol"], _plus1(t["exit_time"]))),
-                   "opt_mfe": mfe, "opt_mae": mae, "dte": r.get("dte"), "nearest": r.get("nearest", 1),
-                   "code_hash": r.get("code_hash"), "built": now, **f}
-            cols = ",".join(row)
-            con.execute(f"INSERT OR REPLACE INTO journal_trades({cols}) VALUES({','.join('?' * len(row))})", list(row.values()))
-            added_trades += 1
-        con.execute("INSERT OR REPLACE INTO journal_days VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (r["id"], r["strategy_id"], r["slug"], r["instrument"], r["day"], len(trades), r["gross_pnl"], round(net_total, 2),
-                     *_day_context(cache, cfg, r["day"], daily), r.get("dte"), r.get("nearest", 1), now))
-        added_runs += 1
-    con.commit()
-    out = {"runs_added": added_runs, "trades_added": added_trades, "stale_removed": len(stale),
-           "trades_total": con.execute("SELECT COUNT(*) FROM journal_trades").fetchone()[0],
-           "days_total": con.execute("SELECT COUNT(*) FROM journal_days").fetchone()[0]}
-    if own:
-        con.close()
-    if not quiet:
-        print(f"journal: {out['runs_added']} runs / {out['trades_added']} trades added, {out['stale_removed']} superseded runs removed; "
-              f"now {out['trades_total']} trades over {out['days_total']} strategy-days")
-    return out
+    return round((datetime.strptime(b[:8], "%H:%M:%S") - datetime.strptime(a[:8], "%H:%M:%S")).total_seconds() / 60, 1)
 
 
 def _plus1(t):
     return (datetime.strptime(t[:5], "%H:%M") + timedelta(minutes=1)).strftime("%H:%M")
 
 
-def _day_context(cache, cfg, day, daily):
-    u = _load(cache, cfg["index_symbol"], day)
-    v = _load(cache, "INDIAVIX", day)
+def _excursion(load, symbol, day, t_in, t_out, entry, qty):
+    o = load(symbol, day)
+    if o is None:
+        return None, None
+    seg = o.loc[pd.Timestamp(f"{day} {t_in[:5]}"): pd.Timestamp(f"{day} {t_out[:5]}")]
+    if not len(seg):
+        return None, None
+    return round((float(seg["high"].max()) - entry) * qty, 2), round((float(seg["low"].min()) - entry) * qty, 2)
+
+
+def _day_context(load, cfg, instrument, day):
+    u, v = load(cfg["index_symbol"], day), load("INDIAVIX", day)
     rng = chg = gap = vo = vc = vr = None
     if u is not None and len(u):
-        o, c, hi, lo = float(u["open"].iloc[0]), float(u["close"].iloc[-1]), float(u["high"].max()), float(u["low"].min())
-        rng, chg = round((hi - lo) / o * 100, 4), _pct(c, o)
-        if daily is not None and len(daily):
-            prev = daily[daily.index < pd.Timestamp(date.fromisoformat(day))]
+        o, cl, hi, lo = float(u["open"].iloc[0]), float(u["close"].iloc[-1]), float(u["high"].max()), float(u["low"].min())
+        rng, chg = round((hi - lo) / o * 100, 4), _pct(cl, o)
+        dly = load("daily_" + instrument.upper(), None)
+        if dly is not None and len(dly):
+            prev = dly[dly.index < pd.Timestamp(date.fromisoformat(day))]
             if len(prev):
                 gap = _pct(o, float(prev["close"].iloc[-1]))
     if v is not None and len(v):
@@ -278,7 +375,134 @@ def _day_context(cache, cfg, day, daily):
     return rng, chg, gap, vo, vc, vr
 
 
-# ---------------- query ----------------
+def build(con=None, rebuild=False, cache=None, quiet=False):
+    """Journal current runs that are new or were built with an older feature version; drop superseded runs."""
+    from script_openalgo.backtest_core import instruments
+    own = con is None
+    con = con or db.connect()
+    ensure(con)
+    cache = cache or db.ws_paths()[1]
+    fv = feature_version()
+    if rebuild:
+        con.execute("DELETE FROM journal_trades")
+        con.execute("DELETE FROM journal_days")
+    runs = current_runs(con)
+    keep = {r["id"] for r in runs}
+    have = {r[0]: r[1] for r in con.execute("SELECT run_id, feature_version FROM journal_days")}
+    stale = [rid for rid in have if rid not in keep]
+    for rid in stale:
+        con.execute("DELETE FROM journal_trades WHERE run_id=?", (rid,))
+        con.execute("DELETE FROM journal_days WHERE run_id=?", (rid,))
+    load = make_loader(cache)
+    added_runs = added_trades = refreshed = 0
+    for r in runs:
+        if have.get(r["id"]) == fv:
+            continue
+        rd = r["result_dir"]
+        if not rd or not os.path.isdir(rd) or r["instrument"] not in instruments.INSTRUMENTS:
+            continue
+        if r["id"] in have:
+            refreshed += 1
+            con.execute("DELETE FROM journal_trades WHERE run_id=?", (r["id"],))
+        cfg = instruments.get(r["instrument"])
+        tp = os.path.join(rd, "trades.csv")
+        trades = list(csv.DictReader(open(tp, encoding="utf-8"))) if os.path.exists(tp) else []
+        reasons = _exit_reasons(rd)
+        now = datetime.now().isoformat(timespec="seconds")
+        net_total = 0.0
+        for n, t in enumerate(trades, 1):
+            ctx = Ctx(cache, r["instrument"], cfg, r["day"], t["entry_time"], t, r, load)
+            feats = compute_features(ctx)
+            entry, exitp, qty = float(t["entry_price"]), float(t["exit_price"]), int(float(t["qty"]))
+            pnl = float(t["gross_pnl"])
+            net = float(t.get("net_pnl") or pnl)
+            net_total += net
+            mfe, mae = _excursion(load, t["symbol"], r["day"], t["entry_time"], t["exit_time"], entry, qty)
+            row = {"run_id": r["id"], "strategy_id": r["strategy_id"], "slug": r["slug"], "instrument": r["instrument"], "day": r["day"],
+                   "trade_no": n, "side": "CE" if t["symbol"].endswith("CE") else "PE", "symbol": t["symbol"], "qty": qty,
+                   "entry_time": t["entry_time"], "exit_time": t["exit_time"], "entry_price": entry, "exit_price": exitp,
+                   "pnl": pnl, "net": net, "win": 1 if net > 0 else 0, "hold_min": _mins(t["entry_time"], t["exit_time"]),
+                   "exit_reason": reasons.get((t["symbol"], t["exit_time"][:5])) or reasons.get((t["symbol"], _plus1(t["exit_time"]))),
+                   "opt_mfe": mfe, "opt_mae": mae, "dte": r.get("dte"), "nearest": r.get("nearest", 1), "code_hash": r.get("code_hash"),
+                   "features": json.dumps(feats, sort_keys=True), "feature_version": fv, "built": now}
+            con.execute(f"INSERT OR REPLACE INTO journal_trades({','.join(row)}) VALUES({','.join('?' * len(row))})", list(row.values()))
+            added_trades += 1
+        con.execute("INSERT OR REPLACE INTO journal_days VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (r["id"], r["strategy_id"], r["slug"], r["instrument"], r["day"], len(trades), r["gross_pnl"], round(net_total, 2),
+                     *_day_context(load, cfg, r["instrument"], r["day"]), r.get("dte"), r.get("nearest", 1), fv, now))
+        added_runs += 1
+    con.commit()
+    out = {"runs_added": added_runs - refreshed, "runs_refreshed": refreshed, "trades_added": added_trades, "stale_removed": len(stale),
+           "trades_total": con.execute("SELECT COUNT(*) FROM journal_trades").fetchone()[0],
+           "days_total": con.execute("SELECT COUNT(*) FROM journal_days").fetchone()[0], "feature_version": fv}
+    if own:
+        con.close()
+    if not quiet:
+        print(f"journal: {out['runs_added']} new runs, {out['runs_refreshed']} recomputed (feature version {fv}), {out['trades_added']} trades "
+              f"written, {out['stale_removed']} superseded runs removed; now {out['trades_total']} trades over {out['days_total']} strategy-days")
+    return out
+
+
+def update_quietly(con=None):
+    """Journal the runs added since the last build; never raises (called after jobs and syncs)."""
+    try:
+        return build(con, quiet=True)
+    except Exception as e:                                   # the journal must never break a test run
+        print(f"(journal update skipped: {e})")
+        return None
+
+
+# ---------------- reading ----------------
+def load_rows(con, strategy=None, instrument=None, side=None, include_far=False):
+    ensure(con)
+    q, a = "SELECT * FROM journal_trades WHERE 1=1", []
+    for col, val in (("slug", strategy), ("instrument", instrument.upper() if instrument else None), ("side", side.upper() if side else None)):
+        if val:
+            q += f" AND {col}=?"
+            a.append(val)
+    if not include_far:
+        q += " AND COALESCE(nearest, 1) = 1"
+    rows = []
+    for r in db.rows(con, q, a):
+        f = json.loads(r.pop("features") or "{}")
+        rows.append({**f, **r})
+    return rows
+
+
+FILTER_RE = re.compile(r"^\s*([a-z_0-9]+)\s*(<=|>=|!=|=|<|>)\s*(.+?)\s*$")
+
+
+def parse_filter(text):
+    m = FILTER_RE.match(text)
+    if not m:
+        raise SystemExit(f"bad filter {text!r}: use e.g. vix_pos<80 or side=PE")
+    k, op, v = m.groups()
+    try:
+        v = float(v)
+    except ValueError:
+        pass
+    return k, op, v
+
+
+def apply_filters(rows, filters):
+    ops = {"<": lambda a, b: a < b, "<=": lambda a, b: a <= b, ">": lambda a, b: a > b, ">=": lambda a, b: a >= b,
+           "=": lambda a, b: a == b, "!=": lambda a, b: a != b}
+    out = []
+    for r in rows:
+        ok = True
+        for k, op, v in filters:
+            x = r.get(k)
+            if x is None or (isinstance(v, float) and not isinstance(x, (int, float))):
+                ok = False
+                break
+            if not ops[op](x, v):
+                ok = False
+                break
+        if ok:
+            out.append(r)
+    return out
+
+
 def _wilson(wins, n, z=1.96):
     if not n:
         return None, None
@@ -303,133 +527,165 @@ def stats(rows):
             "low_sample": n < 30}
 
 
-def select(con, strategy=None, instrument=None, side=None, time_from=None, time_to=None, include_far=False, **ranges):
-    ensure(con)
-    q, a = "SELECT * FROM journal_trades WHERE 1=1", []
-    if strategy:
-        q += " AND slug=?"; a.append(strategy)
-    if instrument:
-        q += " AND instrument=?"; a.append(instrument.upper())
-    if side:
-        q += " AND side=?"; a.append(side.upper())
-    if time_from:
-        h, m = map(int, time_from.split(":")); q += " AND minute_of_day >= ?"; a.append(h * 60 + m)
-    if time_to:
-        h, m = map(int, time_to.split(":")); q += " AND minute_of_day < ?"; a.append(h * 60 + m)
-    if not include_far:
-        q += " AND COALESCE(nearest, 1) = 1"
-    for k, (lo, hi) in ranges.items():
-        if lo is not None:
-            q += f" AND {k} >= ?"; a.append(lo)
-        if hi is not None:
-            q += f" AND {k} < ?"; a.append(hi)
-    return db.rows(con, q, a)
+def quantile_edges(values, k):
+    v = sorted(values)
+    return [v[int(len(v) * i / k)] for i in range(1, k)] if len(v) >= k else []
 
 
-def bucketize(rows, feature):
-    edges = BUCKETS.get(feature)
+def bucketize(rows, feature, k=4):
+    vals = [r.get(feature) for r in rows if isinstance(r.get(feature), (int, float))]
     groups = {}
+    if vals and len(vals) >= len([r for r in rows if r.get(feature) is not None]) * 0.9 and len(set(vals)) > k:
+        edges = quantile_edges(vals, k)
+        labels = [f"< {edges[0]:g}"] + [f"{a:g} .. {b:g}" for a, b in zip(edges, edges[1:])] + [f">= {edges[-1]:g}"]
+        for r in rows:
+            x = r.get(feature)
+            if not isinstance(x, (int, float)):
+                groups.setdefault("n/a", []).append(r)
+                continue
+            i = sum(1 for e in edges if x >= e)
+            groups.setdefault((i, labels[i]), []).append(r)
+        return {lab[1] if isinstance(lab, tuple) else lab: stats(g) for lab, g in sorted(groups.items(), key=lambda kv: kv[0] if isinstance(kv[0], tuple) else (99, "")) }
     for r in rows:
-        v = r.get(feature)
-        if edges is None:
-            key = str(v)
-        elif v is None:
-            key = "n/a"
-        else:
-            prev = None
-            key = None
-            for e in edges:
-                if v < e:
-                    key = f"< {e}" if prev is None else f"{prev} .. {e}"
-                    break
-                prev = e
-            key = key or f">= {edges[-1]}"
-        groups.setdefault(key, []).append(r)
-    return {k: stats(v) for k, v in sorted(groups.items(), key=lambda kv: _sort_key(kv[0]))}
+        groups.setdefault(str(r.get(feature)), []).append(r)
+    return {k2: stats(g) for k2, g in sorted(groups.items())}
 
 
-def _sort_key(k):
-    if k.startswith("< "):
-        return (0, -1e18)
-    if k.startswith(">= "):
-        return (0, 1e18)
-    m = re.match(r"(-?[\d.]+)", k)
-    return (0, float(m.group(1))) if m else (1, k)
-
-
-def update_quietly(con=None):
-    """Journal the runs added since the last build; never raises (called after jobs and syncs)."""
-    try:
-        return build(con, quiet=True)
-    except Exception as e:                                   # the journal must never break a test run
-        print(f"(journal update skipped: {e})")
-        return None
-
-
-def similar(con, k=15, strategy=None, instrument=None, side=None, **ctx):
-    """The k past trades whose entry context is closest to `ctx` (feature -> value), scaled by each feature's spread."""
-    rows = select(con, strategy, instrument, side)
-    feats = [f for f, v in ctx.items() if v is not None and f in FEATURES]
+def similar(rows, ctx, k=15):
+    """The k trades whose features are closest to `ctx` (feature -> value), each feature scaled by its spread."""
+    feats = [f for f, v in ctx.items() if isinstance(v, (int, float))]
     if not rows or not feats:
         return [], feats
     spread = {}
     for f in feats:
-        vals = [r[f] for r in rows if r.get(f) is not None]
+        vals = [r[f] for r in rows if isinstance(r.get(f), (int, float))]
         mu = sum(vals) / len(vals) if vals else 0
         spread[f] = (sum((x - mu) ** 2 for x in vals) / len(vals)) ** 0.5 if vals else 1
     def dist(r):
-        s = 0.0
-        for f in feats:
-            if r.get(f) is None:
-                s += 4.0                                     # unknown feature counts as far
-            else:
-                s += ((r[f] - ctx[f]) / (spread[f] or 1)) ** 2
-        return s ** 0.5
+        return sum(4.0 if not isinstance(r.get(f), (int, float)) else ((r[f] - ctx[f]) / (spread[f] or 1)) ** 2 for f in feats) ** 0.5
     return sorted(rows, key=dist)[:k], feats
+
+
+# ---------------- edge report ----------------
+def _bh(pvals):
+    """Benjamini-Hochberg q-values (false discovery rate) for a list of p-values."""
+    m = len(pvals)
+    order = sorted(range(m), key=lambda i: pvals[i])
+    q = [0.0] * m
+    prev = 1.0
+    for rank in range(m, 0, -1):
+        i = order[rank - 1]
+        prev = min(prev, pvals[i] * m / rank)
+        q[i] = prev
+    return q
+
+
+def edges(rows, min_trades=8, min_days=5, perms=2000, group_by=("slug", "instrument"), seed=7):
+    """For every (strategy, instrument) and feature: split the trades into thirds by the feature and compare each third with
+    the other trades of that strategy (average net, shuffle test; win rate shown too). All p-values together get
+    Benjamini-Hochberg q-values. Returns (tests, summary)."""
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    groups = {}
+    for r in rows:
+        groups.setdefault(tuple(r[g] for g in group_by), []).append(r)
+    tests = []
+    names = feature_names()
+    for key, g in groups.items():
+        if len(g) < 2 * min_trades:
+            continue
+        nets_all = np.array([x["net"] or 0 for x in g], dtype=float)
+        for f in names:
+            vals = [(i, x.get(f)) for i, x in enumerate(g) if isinstance(x.get(f), (int, float))]
+            if len(vals) < 2 * min_trades or len({v for _, v in vals}) < 3:
+                continue
+            e = quantile_edges([v for _, v in vals], 3)
+            if len(set(e)) < 2:
+                continue
+            for b, (lo, hi, label) in enumerate([(None, e[0], f"{f} < {e[0]:g}"), (e[0], e[1], f"{e[0]:g} <= {f} < {e[1]:g}"),
+                                                 (e[1], None, f"{f} >= {e[1]:g}")]):
+                idx = [i for i, v in vals if (lo is None or v >= lo) and (hi is None or v < hi)]
+                rest = [i for i, _ in vals if i not in set(idx)]
+                days = len({g[i]["day"] for i in idx})
+                if len(idx) < min_trades or len(rest) < min_trades or days < min_days:
+                    continue
+                a, rr = nets_all[idx], nets_all[rest]
+                obs = a.mean() - rr.mean()
+                pool = np.concatenate([a, rr])
+                cnt = 0
+                for _ in range(perms):
+                    rng.shuffle(pool)
+                    if abs(pool[:len(a)].mean() - pool[len(a):].mean()) >= abs(obs) - 1e-9:
+                        cnt += 1
+                p = (cnt + 1) / (perms + 1)
+                wa, wr = float((a > 0).mean() * 100), float((rr > 0).mean() * 100)
+                tests.append({"group": dict(zip(group_by, key)), "feature": f, "condition": label, "trades": len(idx), "days": days,
+                              "avg_net": round(float(a.mean()), 1), "avg_net_rest": round(float(rr.mean()), 1), "diff": round(float(obs), 1),
+                              "win_rate": round(wa, 1), "win_rate_rest": round(wr, 1), "p": round(p, 4),
+                              "total_net": round(float(a.sum()), 1)})
+    for t, q in zip(tests, _bh([t["p"] for t in tests]) if tests else []):
+        t["q"] = round(q, 4)
+    m = len(tests)
+    summary = {"tests": m, "expected_false_at_p05": round(0.05 * m, 1), "p_below_05": sum(1 for t in tests if t["p"] < 0.05),
+               "candidates_q10": sum(1 for t in tests if t["q"] < 0.10), "min_trades": min_trades, "min_days": min_days,
+               "trades": len(rows), "days": len({r["day"] for r in rows})}
+    return sorted(tests, key=lambda t: (t["q"], t["p"])), summary
+
+
+def edges_text(tests, summary, top=20):
+    s = summary
+    lines = ["# Journal edge report", "",
+             f"{s['trades']} trades on {s['days']} distinct days. {s['tests']} comparisons were made (each strategy x instrument x feature, "
+             f"split in thirds, each third against the other trades; min {s['min_trades']} trades and {s['min_days']} days per third).", "",
+             f"**Multiple comparisons:** with {s['tests']} tests, about **{s['expected_false_at_p05']}** would show p < 0.05 by chance alone; "
+             f"{s['p_below_05']} did. q = Benjamini-Hochberg false-discovery-rate value: only rows with q < 0.10 are candidates "
+             f"({s['candidates_q10']} here). A candidate is a HYPOTHESIS: make it an optional strategy filter (default off) and confirm it "
+             "on days it was not found on (multi-day run on newer days) before using it. Trades on the same day are not independent, "
+             "so also look at the day count.", "",
+             "| q | p | strategy | instrument | condition | trades | days | avg net | others | win % | others |", "|---|---|---|---|---|---|---|---|---|---|---|"]
+    for t in tests[:top]:
+        flag = " **candidate**" if t["q"] < 0.10 else ""
+        g = t["group"]
+        lines.append(f"| {t['q']}{flag} | {t['p']} | {g.get('slug', '')} | {g.get('instrument', 'all')} | `{t['condition']}` | {t['trades']} | {t['days']} | "
+                     f"{t['avg_net']} | {t['avg_net_rest']} | {t['win_rate']} | {t['win_rate_rest']} |")
+    if not tests:
+        lines.append("| - | - | not enough trades per strategy yet | | | | | | | | |")
+    return "\n".join(lines)
 
 
 # ---------------- CLI ----------------
 def _print_stats(label, s):
     if not s.get("trades"):
-        print(f"{label:28} no trades")
+        print(f"{label:34} no trades")
         return
     lo, hi = s["win_rate_95"]
-    print(f"{label:28} trades {s['trades']:>4}  days {s['days']:>3}  win {s['win_rate']:>5.1f}% (95%: {lo}-{hi})  "
+    print(f"{label:34} trades {s['trades']:>4}  days {s['days']:>3}  win {s['win_rate']:>5.1f}% (95%: {lo}-{hi})  "
           f"avg net {s['avg_net']:>8.1f}  total {s['total_net']:>9.1f}  PF {s['profit_factor'] if s['profit_factor'] is not None else '-':>5}"
           f"  hold {s['avg_hold_min']:>5.1f}m" + ("  LOW SAMPLE" if s["low_sample"] else ""))
-
-
-def _range_args(a):
-    out = {}
-    for f in ("vix", "vix_pos", "vix_chg15", "vix_chg30", "u_day_pos", "u_from_open_pct", "u_ret30_pct", "atr5_pct", "dte", "gap_pct"):
-        lo, hi = getattr(a, f + "_min", None), getattr(a, f + "_max", None)
-        if lo is not None or hi is not None:
-            out[f] = (lo, hi)
-    return out
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="script-openalgo journal", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    b = sub.add_parser("build", help="add journal rows for new runs")
+    b = sub.add_parser("build", help="journal new runs, recompute rows with an old feature version")
     b.add_argument("--rebuild", action="store_true", help="rebuild the whole journal")
-    for name in ("query", "similar", "export"):
+    sub.add_parser("features", help="list the registered features")
+    for name in ("query", "similar", "edges", "export"):
         p = sub.add_parser(name)
         p.add_argument("--strategy"); p.add_argument("--instrument"); p.add_argument("--side", choices=["CE", "PE"])
+        p.add_argument("--include-far", action="store_true", help="also far-expiry days")
         p.add_argument("--json", action="store_true", help="machine-readable output")
+        p.add_argument("--filter", action="append", default=[], help="e.g. vix_pos<80, minute_of_day>=600, side=PE (repeatable)")
         if name == "query":
-            p.add_argument("--from", dest="time_from", help="HH:MM entry from"); p.add_argument("--to", dest="time_to", help="HH:MM entry before")
-            p.add_argument("--include-far", action="store_true", help="also far-expiry days")
-            p.add_argument("--by", choices=sorted(BUCKETS), help="break down by this feature")
-            for f in ("vix", "vix_pos", "vix_chg15", "vix_chg30", "u_day_pos", "u_from_open_pct", "u_ret30_pct", "atr5_pct", "dte", "gap_pct"):
-                p.add_argument(f"--{f.replace('_', '-')}-min", dest=f + "_min", type=float)
-                p.add_argument(f"--{f.replace('_', '-')}-max", dest=f + "_max", type=float)
+            p.add_argument("--by", help="break down by this feature (numeric features: quartiles)")
         if name == "similar":
             p.add_argument("-k", type=int, default=15)
             p.add_argument("--time", help="HH:MM of the signal")
-            for f in FEATURES:
-                if f != "minute_of_day":
-                    p.add_argument(f"--{f.replace('_', '-')}", dest=f, type=float)
+            p.add_argument("--feature", action="append", default=[], help="NAME=value of the current situation (repeatable)")
+        if name == "edges":
+            p.add_argument("--min-trades", type=int, default=8); p.add_argument("--min-days", type=int, default=5)
+            p.add_argument("--pool", action="store_true", help="per strategy over all instruments (instead of per instrument)")
+            p.add_argument("--top", type=int, default=20)
         if name == "export":
             p.add_argument("--out", default="journal_trades.csv")
     a = ap.parse_args(argv)
@@ -437,41 +693,67 @@ def main(argv=None):
     ensure(con)
     if a.cmd == "build":
         build(con, rebuild=a.rebuild)
-    elif a.cmd == "query":
-        rows = select(con, a.strategy, a.instrument, a.side, a.time_from, a.time_to, a.include_far, **_range_args(a))
+        con.close()
+        return
+    if a.cmd == "features":
+        print(f"feature version {feature_version()}")
+        for gname, ver, feats, _ in GROUPS:
+            print(f"[{gname} v{ver}]")
+            for f, d in feats.items():
+                print(f"  {f:22} {d}")
+        con.close()
+        return
+    rows = apply_filters(load_rows(con, a.strategy, a.instrument, a.side, a.include_far), [parse_filter(f) for f in a.filter])
+    if a.cmd == "query":
         s = stats(rows)
-        res = {"filters": {k: v for k, v in vars(a).items() if v not in (None, False) and k not in ("cmd", "json", "by")}, "all": s}
-        if a.by:
-            res["by"] = {"feature": a.by, "buckets": bucketize(rows, a.by)}
+        res = {"all": s, "by": {"feature": a.by, "buckets": bucketize(rows, a.by)} if a.by else None}
         if a.json:
             print(json.dumps(res, indent=1, default=str))
         else:
             _print_stats("ALL matching", s)
-            for k, v in (res.get("by") or {}).get("buckets", {}).items():
+            for k, v in (res["by"] or {}).get("buckets", {}).items():
                 _print_stats(f"  {a.by} {k}", v)
             print("net = after the estimated spread (stocks); gross for indices. Backtests on cached data, paper fills. "
-                  "95% = Wilson interval of the win rate; under 30 trades the numbers are LOW SAMPLE.")
+                  "95% = Wilson interval of the win rate; under 30 trades = LOW SAMPLE.")
     elif a.cmd == "similar":
-        ctx = {f: getattr(a, f, None) for f in FEATURES}
+        ctx = {}
+        for f in a.feature:
+            k, _, v = parse_filter(f)
+            ctx[k] = v
         if a.time:
             h, m = map(int, a.time.split(":")); ctx["minute_of_day"] = h * 60 + m
-        rows, feats = similar(con, a.k, a.strategy, a.instrument, a.side, **ctx)
-        s = stats(rows)
+        top, feats = similar(rows, ctx, a.k)
+        s = stats(top)
         if a.json:
-            print(json.dumps({"matched_on": feats, "stats": s, "trades": rows}, indent=1, default=str))
+            print(json.dumps({"matched_on": feats, "stats": s, "trades": top}, indent=1, default=str))
         else:
-            print(f"matched on: {', '.join(feats) or 'nothing (give --time / --vix-pos / ...)'}")
-            _print_stats(f"{len(rows)} most similar", s)
-            for r in rows:
-                print(f"  {r['day']} {r['entry_time'][:5]} {r['slug'][:24]:24} {r['instrument']:9} {r['side']} net {r['net']:>8.1f}  "
-                      f"vix {r['vix']} pos {r['vix_pos']} | day pos {r['u_day_pos']} | {r['exit_reason'] or ''}")
+            print(f"matched on: {', '.join(feats) or 'nothing (give --time / --feature NAME=value)'}")
+            _print_stats(f"{len(top)} most similar", s)
+            for r in top:
+                print(f"  {r['day']} {r['entry_time'][:5]} {r['slug'][:24]:24} {r['instrument']:9} {r['side']} net {r['net']:>8.1f} | "
+                      + " ".join(f"{f}={r.get(f)}" for f in feats) + f" | {r['exit_reason'] or ''}")
+    elif a.cmd == "edges":
+        tests, summary = edges(rows, a.min_trades, a.min_days, group_by=("slug",) if a.pool else ("slug", "instrument"))
+        text = edges_text(tests, summary, a.top)
+        from script_openalgo import config
+        out_dir = os.path.join(config.results_dir(), "journal")
+        os.makedirs(out_dir, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        with open(os.path.join(out_dir, f"edges_{stamp}.md"), "w", encoding="utf-8") as f:
+            f.write(text + "\n")
+        json.dump({"summary": summary, "tests": tests}, open(os.path.join(out_dir, f"edges_{stamp}.json"), "w", encoding="utf-8"), indent=1)
+        print(json.dumps({"summary": summary, "tests": tests[:a.top]}, indent=1) if a.json else text)
+        if not a.json:
+            print(f"\nSaved: results/journal/edges_{stamp}.md (+ .json with all {len(tests)} comparisons)")
     elif a.cmd == "export":
-        rows = select(con, a.strategy, a.instrument, a.side, include_far=True)
-        if rows:
-            with open(a.out, "w", newline="", encoding="utf-8") as f:
-                w = csv.DictWriter(f, fieldnames=list(rows[0]))
-                w.writeheader(); w.writerows(rows)
-        print(f"{len(rows)} trades -> {a.out}")
+        names = feature_names()
+        base = ["run_id", "slug", "instrument", "day", "trade_no", "side", "symbol", "qty", "entry_time", "exit_time", "entry_price",
+                "exit_price", *OUTCOME, "dte", "nearest", "code_hash", "feature_version"]
+        with open(a.out, "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=base + [n for n in names if n not in base], extrasaction="ignore")
+            w.writeheader()
+            w.writerows(rows)
+        print(f"{len(rows)} trades x {len(base) + len(names)} columns -> {a.out}")
     con.close()
 
 

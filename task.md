@@ -245,3 +245,5 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [x] Duplicate runs: 'Remove N duplicates' (identical older runs of the same day) and 'Remove N superseded older runs' on the strategy page and in Results; add_run skips a result folder that is already recorded (multi-day job + disk sync used to record it twice) (2026-10-22)
 - [x] Trade journal (2026-10-23): journal_trades/journal_days with entry context (VIX, underlying, time, DTE) and outcome for every current run; auto-updated after jobs/multiday/rescan; CLI build/query/similar/export; trade_journal skill for decisions. Repo: 491 trades over 431 strategy-days
 - [ ] Journal: a web app view (buckets per strategy) and including live Signals sessions once real live days exist
+- [x] Journal features pluggable (feature groups + version, JSON storage, auto-recompute) with volume, OI/PCR and premium level; edge report with Benjamini-Hochberg q-values (2026-10-23: 467 tests, 0 candidates)
+- [ ] Journal score for new signals (similar-trade expectancy now, a model later) shown in the Signals table

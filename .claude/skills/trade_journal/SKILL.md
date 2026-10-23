@@ -15,29 +15,29 @@ PYTHONPATH=src python -m script_openalgo.cli journal build                    # 
 ```
 Always run `journal build` first: it only adds runs not yet journaled (seconds).
 
-## Columns (journal_trades)
+## Columns
 - Identity: `slug` (strategy), `instrument`, `day`, `entry_time`, `exit_time`, `side` (CE = bullish buy, PE = bearish buy), `symbol`, `qty`, `run_id`, `code_hash`.
 - Outcome: `pnl` (gross), `net` (after the instrument's estimated spread; = gross for indices), `win` (net > 0), `hold_min`, `exit_reason`, `opt_mfe` / `opt_mae` (best / worst option P&L in rupees while held).
-- Context at entry (data completed before that minute):
-  - time: `minute_of_day` (09:15 = 555), `weekday` (0 = Monday), `dte` (days to expiry), `nearest` (0 = far-expiry day)
-  - underlying: `u_price`, `u_from_open_pct`, `u_day_pos` (0 = at the day's low so far, 100 = at the high), `u_ret15_pct` / `u_ret30_pct` / `u_ret60_pct`, `atr5_pct` (ATR(14) of 5m candles, % of price), `gap_pct` (open vs previous close), `prev_range_pct`
-  - India VIX: `vix`, `vix_pos` (position in its range so far today, 0-100), `vix_chg15` / `vix_chg30` (points), `vix_from_open`
+- Features (context at entry, data completed before that minute): stored as JSON in `features`, with `feature_version`. **List them with `script-openalgo journal features`** (they are pluggable and grow over time). Groups today: time (minute_of_day, weekday, dte), underlying (move from open, day position, 15/30/60-min returns, ATR5, gap, previous range), vix (level, position in day range, 15/30-min change, change from open), volume (underlying and option volume vs their own average so far, option volume), oi (PCR of open interest near ATM, ATM call/put OI change, traded option OI change), premium (option price % of spot, ATM straddle % of spot as an implied-volatility proxy, option 15-min change).
 - `journal_days`: per strategy / instrument / day: trades, pnl, net, `day_range_pct`, `day_change_pct`, `gap_pct`, `vix_open`, `vix_close`, `vix_range`.
 
 ## Commands
 ```
+script-openalgo journal features
 script-openalgo journal query --strategy parabolic_sar_flip_scalp --instrument BANKNIFTY --by vix_pos
-script-openalgo journal query --strategy opening_range_breakout_orb --from 09:15 --to 10:30 --vix-pos-min 50 --by u_ret30_pct
-script-openalgo journal similar --strategy parabolic_sar_flip_scalp --instrument NIFTY --side PE --time 12:05 --vix 16.85 --vix-pos 50 --u-day-pos 15 -k 15
-script-openalgo journal export --out journal.csv
+script-openalgo journal query --strategy opening_range_breakout_orb --filter "minute_of_day<630" --filter "vix_pos>=50" --by u_ret30_pct
+script-openalgo journal similar --strategy parabolic_sar_flip_scalp --instrument NIFTY --side PE --time 12:05 --feature vix=16.85 --feature vix_pos=50 --feature u_day_pos=15 -k 15
+script-openalgo journal edges [--strategy S] [--pool] [--min-trades 8 --min-days 5]
+script-openalgo journal export --out journal.csv          # all features as columns: model training data
 ```
-- `query` filters: `--strategy --instrument --side --from --to --include-far`, ranges `--<feature>-min / -max` for vix, vix-pos, vix-chg15, vix-chg30, u-day-pos, u-from-open-pct, u-ret30-pct, atr5-pct, dte, gap-pct. `--by FEATURE` buckets the result (vix_pos, vix, vix_chg15, vix_chg30, minute_of_day, u_day_pos, u_from_open_pct, u_ret30_pct, atr5_pct, dte, gap_pct, weekday, side, exit_reason, instrument, slug, day).
+- Filters: `--strategy --instrument --side --include-far` and any number of `--filter "<feature><op><value>"` (ops < <= > >= = !=). `--by FEATURE` buckets numeric features into quartiles (categorical ones such as side, exit_reason, instrument, slug by value).
 - `similar` returns the k past trades closest to a situation (features scaled by their spread; only the features you give are used).
-- Add `--json` for machine-readable output. For anything else query SQLite directly (read-only): `SELECT ... FROM journal_trades`.
+- `edges`: every strategy x instrument x feature, split in thirds, each third against the rest (shuffle test on average net; win rate shown). It prints how many tests were made, how many would look significant by chance, and Benjamini-Hochberg q-values. **Only q < 0.10 rows are candidates, and a candidate is a hypothesis**, never a rule: confirm it as an optional strategy filter on days it was not found on. The report is saved under `results/journal/`.
+- Add `--json` for machine-readable output. For anything else read SQLite directly (read-only).
 
 ## How to answer "should I take this signal?" (or "which strategy for today?")
 1. Get the situation: strategy, instrument, side, time; India VIX now and its range so far today; the underlying's move since the open and position in its day range. From a Signals session use the signal row and the chart's values; live, read them from OpenAlgo (`quotes`, `history` 1m for the underlying and `INDIAVIX` on `NSE_INDEX`).
-2. `journal build`, then `journal similar` with those values, and `journal query --strategy ... --instrument ... --by <the feature that matters most>` (usually vix_pos, minute_of_day, u_day_pos).
+2. `journal build`, then `journal similar` with those values (`--feature NAME=value`), and `journal query --strategy ... --instrument ... --by <the feature that matters most>`. Check `journal edges` for that strategy: if no condition reaches q < 0.10, say that the journal shows no reliable condition yet.
 3. Report: number of matching trades and days, win rate with its 95% interval, average and total net, profit factor, typical exit reasons and MFE (did winners give back?). Compare with the strategy's overall numbers: a bucket only matters if it differs from the overall result by more than its interval.
 4. Say plainly when the evidence is weak: fewer than 30 trades or fewer than 15 days = LOW SAMPLE; an interval that spans 50% means "no edge shown". Days are not independent (one trend day can supply several trades).
 5. Give a recommendation as information, not an order: "historically similar trades won 7 of 20 (35%, interval 18-57%), average -420: weak evidence against". Never place, modify or cancel orders from this skill; the user acts in the Signals tab (Act, Analyzer/paper mode by default).

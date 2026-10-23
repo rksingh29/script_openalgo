@@ -427,7 +427,13 @@ From PowerShell (in the workspace folder, or add `--home <folder>`):
 script-openalgo journal build                                   # catch up (also runs by itself after every test)
 script-openalgo journal query --strategy parabolic_sar_flip_scalp --by vix_pos
 script-openalgo journal query --strategy opening_range_breakout_orb --from 09:15 --to 10:30 --by u_ret30_pct
-script-openalgo journal similar --strategy parabolic_sar_flip_scalp --instrument NIFTY --side PE --time 12:05 --vix 16.85 --vix-pos 50 --u-day-pos 15
+script-openalgo journal similar --strategy parabolic_sar_flip_scalp --instrument NIFTY --side PE --time 12:05 --feature vix=16.85 --feature vix_pos=50 --feature u_day_pos=15
+script-openalgo journal features                                # what is recorded per trade (grows over time)
+script-openalgo journal edges                                   # conditions that may help or hurt each strategy
 script-openalgo journal export --out journal.csv                 # open in Excel
 ```
 In Claude Code, ask in plain words ("would the 12:05 PE from Parabolic SAR today have been a good trade by history?", "under which VIX conditions does ORB lose?"): the **trade_journal** skill runs these queries and reports the evidence with its sample size. It never places orders. Few trades = weak evidence: the output marks anything under 30 trades as LOW SAMPLE and shows a 95% range for the win rate.
+
+**Features are pluggable.** Besides VIX and the underlying, each trade now records volume (underlying and option, against their own average so far that day), open interest (put/call ratio near the money, ATM call/put OI change, the traded option's OI change) and premium level (option price as % of spot, ATM straddle as % of spot, the option's 15-minute change). When a feature is added or changed, `journal build` recomputes the history from the cached candles.
+
+**Edge report.** `journal edges` compares, for every strategy and feature, the trades in each third of the feature's range with the strategy's other trades. Because it makes hundreds of comparisons, some will look good by pure chance: the report says how many to expect, and gives each row a q-value (false discovery rate). Only q < 0.10 rows are candidates, and even those are hypotheses to test as an optional strategy filter on new days, not rules. On 2026-10-23 (461 trades, 13 nearest-expiry days): 467 comparisons, 29 with p < 0.05 where about 23 are expected by chance, no candidate: not enough data yet.
