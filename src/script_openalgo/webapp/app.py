@@ -498,7 +498,7 @@ def news_run():
 
 
 # ---------------- signals: run a strategy live or as a replay; its orders become signals; "act" sends one ----------------
-MAX_SIGNAL_SESSIONS = 12     # running sessions at once (a group of strategies uses one each)
+MAX_SIGNAL_SESSIONS = 24     # running sessions at once (each strategy x instrument uses one; the Live desk can use up to 3 x 8)
 MAX_GROUP = 8                # strategies in one multi-strategy run
 
 
@@ -614,7 +614,7 @@ def _signal_strategy(sid, params_text):
     return s, params
 
 
-def _launch_signal(s, params, common, group=None):
+def _launch_signal(s, params, common, group=None, desk=None):
     inst, mode = common["inst"], common["mode"]
     events = os.path.join(jobs.LOG_DIR, ws(), "signals_{JOB_ID}.jsonl")
     cmd = [sys.executable, "-u", "-m", "script_openalgo.signals", "--strategy", s["slug"], "--instrument", inst, "--events", events]
@@ -623,6 +623,8 @@ def _launch_signal(s, params, common, group=None):
     meta = {"mode": mode, "instrument": inst, "slug": s["slug"], "params": params}
     if group:
         meta["group"] = group
+    if desk:
+        meta["desk"] = desk
     if mode == "replay":
         cmd += ["--date", common["day"], "--speed", str(common["speed"])] + (["--from", common["start"]] if common["start"] else [])
         meta.update({"date": common["day"], "start": common["start"], "speed": common["speed"]})
@@ -865,6 +867,150 @@ def signals_act(jid):
     con.commit()
     con.close()
     return jsonify(rec)
+
+
+# ---------------- Live desk: the chosen strategies on all selected instruments, one feed ----------------
+MAX_DESK_INSTRUMENTS = 4
+_mode_cache = {"at": 0.0, "val": None}
+
+
+def _cached_mode():
+    import time as _t
+    if _t.time() - _mode_cache["at"] > 15:
+        _mode_cache.update(at=_t.time(), val=_openalgo_mode())
+    return _mode_cache["val"]
+
+
+def _desk(con):
+    return json.loads(db.get_setting(con, "live_desk", "{}") or "{}")
+
+
+def _market_state(now=None):
+    from datetime import datetime as _dt
+    now = now or _dt.now()
+    if now.weekday() >= 5:
+        return "closed (weekend)"
+    t = now.strftime("%H:%M")
+    return "pre-open" if t < "09:15" else "open" if t < "15:30" else "closed"
+
+
+@app.post("/api/live/start")
+def live_start():
+    """Body: {picks: [{instrument, strategy_id, params?}], mode: live|replay, date, time, speed, min_score}."""
+    import uuid
+    b = request.json or {}
+    picks = b.get("picks") or []
+    by = {}
+    for p in picks:
+        inst = str(p.get("instrument") or "").upper()
+        try:
+            sid = int(p.get("strategy_id"))
+        except (TypeError, ValueError):
+            return err("bad strategy in the picks")
+        by.setdefault(inst, []).append((sid, p.get("params") or ""))
+    if not by:
+        return err("choose at least one strategy on one instrument")
+    if len(by) > MAX_DESK_INSTRUMENTS:
+        return err(f"at most {MAX_DESK_INSTRUMENTS} instruments on the Live desk")
+    if any(len(v) > MAX_GROUP for v in by.values()):
+        return err(f"at most {MAX_GROUP} strategies per instrument")
+    con = conn()
+    old = _desk(con)
+    con.close()
+    if old.get("jobs") and any((_signal_job(j) or {}).get("status") == "running" for j in old["jobs"]):
+        return err("the Live desk is already running; stop it first", 409)
+    try:
+        commons = {inst: _signal_common({**b, "instrument": inst}) for inst in by}
+        chosen = {inst: [_signal_strategy(sid, prm) for sid, prm in v] for inst, v in by.items()}
+        need = sum(len(v) for v in chosen.values())
+        if _running_signals() + need > MAX_SIGNAL_SESSIONS:
+            raise SignalStartError(f"the desk needs {need} sessions; {_running_signals()} of {MAX_SIGNAL_SESSIONS} are in use", 409)
+    except SignalStartError as e:
+        return err(str(e), e.code)
+    desk = uuid.uuid4().hex[:8]
+    groups, jids = {}, []
+    for inst, lst in chosen.items():
+        groups[inst] = uuid.uuid4().hex[:8]
+        for s, params in lst:
+            jids.append(_launch_signal(s, params, commons[inst], groups[inst], desk))
+    state = {"id": desk, "started": db.now(), "mode": "replay" if b.get("mode") == "replay" else "live", "date": b.get("date"),
+             "time": b.get("time"), "speed": b.get("speed"), "instruments": list(chosen), "groups": groups, "jobs": jids,
+             "min_score": int(b.get("min_score") or 0)}
+    con = conn()
+    db.set_setting(con, "live_desk", json.dumps(state))
+    con.close()
+    return jsonify(state)
+
+
+@app.post("/api/live/stop")
+def live_stop():
+    con = conn()
+    d = _desk(con)
+    con.close()
+    n = sum(bool(jobs.cancel(ws(), j)) for j in d.get("jobs", []) if (_signal_job(j) or {}).get("status") == "running")
+    return jsonify({"stopped": n})
+
+
+def _pnl(sigs):
+    open_, pnl = {}, 0.0
+    for s in sigs:
+        if s.get("price") is None:
+            continue
+        q = open_.setdefault(s["symbol"], [])
+        if s["action"] == "BUY":
+            q.append([s["qty"], s["price"], s])
+        else:
+            left = s["qty"]
+            while left > 0 and q:
+                t = min(left, q[0][0])
+                pnl += (s["price"] - q[0][1]) * t
+                q[0][0] -= t
+                left -= t
+                if not q[0][0]:
+                    q.pop(0)
+    return round(pnl, 1), [{"symbol": k, "qty": sum(x[0] for x in v), "entry": v[0][1], "entry_id": v[0][2]["id"]} for k, v in open_.items() if v]
+
+
+@app.get("/api/live/feed")
+def live_feed():
+    """Everything the Live page shows, for all instruments of the desk: signals (with journal scores), per-instrument
+    status (last candle, VIX, sessions), market state and OpenAlgo mode."""
+    con = conn()
+    d = _desk(con)
+    con.close()
+    out = {"desk": d, "market": _market_state(), "now": db.now(), "openalgo": _cached_mode(), "instruments": {}, "signals": []}
+    if not d.get("jobs"):
+        return jsonify(out)
+    for jid in d["jobs"]:
+        j = _signal_job(jid)
+        if not j:
+            continue
+        ev = _signal_events(j)
+        scores = _signal_scores(j, ev)
+        meta = json.loads(_signal_job(jid)["meta"] or "{}")
+        inst = meta.get("instrument")
+        acted = meta.get("acted", {})
+        sigs = [dict(e, job_id=jid, slug=meta.get("slug"), name=j.get("name"), instrument=inst, acted=acted.get(str(e["id"])),
+                     score=scores.get(str(e["id"]))) for e in ev if e["type"] == "signal"]
+        pnl, opn = _pnl(sigs)
+        bars = [e for e in ev if e["type"] == "bar"]
+        vix = [e for e in ev if e["type"] == "vix"]
+        end = next((e for e in reversed(ev) if e["type"] in ("end", "error")), None)
+        row = out["instruments"].setdefault(inst, {"group": d["groups"].get(inst), "last_bar": None, "last_close": None, "vix": None,
+                                                    "clock": None, "sessions": []})
+        if bars and (row["last_bar"] is None or bars[-1]["t"] > row["last_bar"]):
+            row["last_bar"], row["last_close"] = bars[-1]["t"], bars[-1]["c"]
+        if vix:
+            row["vix"] = vix[-1]["c"]
+        clock = next((e["t"] for e in reversed(ev) if e["type"] == "clock"), None)
+        if clock and (row["clock"] is None or clock > row["clock"]):
+            row["clock"] = clock
+        row["sessions"].append({"job_id": jid, "slug": meta.get("slug"), "name": j.get("name"), "status": j["status"], "signals": len(sigs),
+                                "pnl": pnl, "open": opn, "error": end.get("message") if end and end.get("type") == "error" else None,
+                                "params": meta.get("params") or {}})
+        out["signals"] += sigs
+    out["signals"].sort(key=lambda s: (s.get("date", ""), s["t"], s["job_id"], s["id"]), reverse=True)
+    return jsonify(out)
 
 
 # ---------------- actions ----------------

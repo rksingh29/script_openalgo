@@ -145,7 +145,7 @@ $("#seed").onclick = () => confirm("Research 10 unique strategies (one-time seed
 $("#daily").onclick = () => act(() => api("/api/research", { mode: "daily" }));
 $("#auto").onchange = (e) => act(() => api("/api/auto", { on: e.target.checked }));
 
-const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["selector", "Selector"], ["signals", "Signals"], ["instruments", "Instruments"], ["jobs", "Jobs"], ["backup", "Backup"]];
+const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["selector", "Selector"], ["live", "Live"], ["signals", "Signals"], ["instruments", "Instruments"], ["jobs", "Jobs"], ["backup", "Backup"]];
 function renderTabs() {
   $("#tabs").replaceChildren(...TABS.map(([k, l]) => h("button", { class: st.tab === k ? "on" : "", onclick: () => { st.tab = k; refresh(); } }, l)));
 }
@@ -444,6 +444,190 @@ function selectorView() {
       (latest.events || []).length ? [h("h4", {}, "Upcoming events"), h("table", {}, h("tbody", {}, latest.events.slice(0, 15).map(e => h("tr", {}, h("td", {}, e.date), h("td", {}, e.instrument), h("td", {}, e.event), h("td", {}, link(e.source, 0))))))] : null,
       N.items.length > 1 ? h("details", {}, h("summary", { class: "small mute" }, `Earlier runs (${N.items.length - 1})`), N.items.slice(1).map(it => h("div", { class: "small" }, h("b", {}, `${it.date || ""} ${it.slot || it.file}`), h("ul", {}, (it.highlights || []).map(x => h("li", {}, x.text)))))) : null));
   return h("div", {}, settings, picks, walk, news);
+}
+
+// ---------- Live desk: chosen strategies on all selected instruments, one feed, sounds ----------
+const Sound = {
+  ctx: null, on: false,
+  enable() { try { this.ctx = this.ctx || new (window.AudioContext || window.webkitAudioContext)(); this.ctx.resume(); this.on = true; } catch (e) { alert("This browser cannot play sounds: " + e.message); } },
+  tone(f1, f2, dur, t0, v) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(f1, t0); o.frequency.linearRampToValueAtTime(f2, t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, v), t0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(c.destination); o.start(t0); o.stop(t0 + dur + 0.05);
+  },
+  // kind: CE | PE | exit | warn; pips = instrument number (1..4) as short cue tones first; loud = full volume and longer
+  play(kind, pips, loud, volume) {
+    if (!this.on || !this.ctx) return;
+    const v = (loud ? 1 : 0.3) * (volume ?? 0.7);
+    let t = this.ctx.currentTime + 0.03;
+    for (let i = 0; i < (pips || 0); i++) { this.tone(1500, 1500, 0.05, t, v * 0.5); t += 0.11; }
+    if (pips) t += 0.1;
+    if (kind === "CE") this.tone(520, 900, loud ? 0.5 : 0.22, t, v);
+    else if (kind === "PE") this.tone(900, 520, loud ? 0.5 : 0.22, t, v);
+    else if (kind === "exit") { this.tone(640, 640, 0.12, t, v); this.tone(640, 640, 0.12, t + 0.2, v); }
+    else if (kind === "warn") { for (let i = 0; i < 3; i++) this.tone(300, 230, 0.25, t + i * 0.35, v); }
+  },
+};
+function liveState() {
+  if (!st.live) {
+    let prefs = {};
+    try { prefs = JSON.parse(localStorage.getItem("livedesk_prefs") || "{}"); } catch (e) { }
+    st.live = { feed: null, pick: {}, setupInst: null, mode: "live", date: "", time: "09:15", speed: "30", chart: null, chartData: null, dismissed: {}, warned: {}, newCount: 0,
+      prefs: { volume: 0.7, policy: "min", min_score: 55, notify: false, ...prefs } };
+  }
+  return st.live;
+}
+function savePrefs(L) { try { localStorage.setItem("livedesk_prefs", JSON.stringify(L.prefs)); } catch (e) { } }
+function loudFor(L, s) {           // alert rule for a BUY signal
+  const sc = s.score && s.score.score, conf = s.score && s.score.confidence;
+  if (L.prefs.policy === "all") return true;
+  if (sc == null) return false;
+  if (L.prefs.policy === "min") return sc >= L.prefs.min_score;
+  return sc >= L.prefs.min_score && conf !== "low";
+}
+async function loadLive() {
+  const L = liveState();
+  const f = await api("/api/live/feed");
+  L.feed = f;
+  if (L.chart && f.desk && f.desk.groups && f.desk.groups[L.chart]) { try { L.chartData = await api("/api/signals/group/" + f.desk.groups[L.chart]); } catch (e) { L.chartData = null; } }
+  const d = f.desk || {};
+  if (!d.id) return;
+  const key = "livedesk_seen_" + d.id;
+  let seen = null;
+  try { seen = JSON.parse(localStorage.getItem(key) || "null"); } catch (e) { }
+  const ids = f.signals.map(s => s.job_id + ":" + s.id);
+  if (seen === null) { seen = ids; }           // first look at this desk: everything so far is "seen" (no sound on reload)
+  else {
+    const fresh = f.signals.filter(s => !seen.includes(s.job_id + ":" + s.id)).reverse();
+    fresh.forEach(s => {
+      const pips = (d.instruments || []).indexOf(s.instrument) + 1;
+      const buy = s.action === "BUY", loud = buy ? loudFor(L, s) : true;
+      Sound.play(buy ? (/CE$/.test(s.symbol) ? "CE" : "PE") : "exit", pips, loud, L.prefs.volume);
+      if (loud && L.prefs.notify && document.hidden && "Notification" in window && Notification.permission === "granted") {
+        try { new Notification(`${s.instrument} ${s.action} ${s.symbol}`, { body: `${s.name || s.slug} · ${s.t}` + (s.score && s.score.score != null ? ` · score ${s.score.score} (${s.score.confidence})` : "") }); } catch (e) { }
+      }
+      if (loud) L.newCount++;
+    });
+    seen = [...new Set([...seen, ...ids])];
+  }
+  try { localStorage.setItem(key, JSON.stringify(seen.slice(-2000))); } catch (e) { }
+  document.title = (L.newCount && document.hidden ? `(${L.newCount}) ` : "") + "Strategy Lab";
+  // warnings: a session failed, or (live, market open) an instrument's candles stopped arriving
+  const nowHM = (f.now || "").slice(11, 16);
+  Object.entries(f.instruments).forEach(([inst, r]) => {
+    const failed = r.sessions.filter(x => x.status === "failed" || x.error);
+    const stale = d.mode === "live" && f.market === "open" && r.last_bar && minutesBetween(r.last_bar, nowHM) > 3;
+    const k = inst + (failed.length ? ":fail" + failed.length : "") + (stale ? ":stale" : "");
+    if ((failed.length || stale) && !L.warned[k]) { L.warned[k] = true; Sound.play("warn", 0, true, L.prefs.volume); }
+  });
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && st.live) { st.live.newCount = 0; document.title = "Strategy Lab"; } });
+function minutesBetween(a, b) { const m = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5); return m(b) - m(a); }
+function liveView() {
+  const L = liveState(), F = L.feed, d = st.data;
+  if (!F) return h("div", {}, "Loading…");
+  const desk = F.desk || {}, running = (desk.jobs || []).length && Object.values(F.instruments).some(r => r.sessions.some(x => x.status === "running"));
+  const strategies = d.strategies.filter(s => !s.archived_at && s.file);
+  // ---- sound controls (always visible) ----
+  const soundBar = h("div", { class: "card row small", style: "flex-wrap:wrap;gap:8px" },
+    Sound.on ? h("span", { class: "pos" }, "🔊 sound on") : h("button", { class: "primary", onclick: () => { Sound.enable(); render(); } }, "Enable sound"),
+    h("button", { class: "small", disabled: !Sound.on, onclick: () => { Sound.play("CE", 1, true, L.prefs.volume); setTimeout(() => Sound.play("PE", 2, true, L.prefs.volume), 1400); setTimeout(() => Sound.play("exit", 0, true, L.prefs.volume), 2800); } }, "Test (CE, PE, exit)"),
+    h("label", {}, "volume ", h("input", { type: "range", min: 0, max: 1, step: 0.05, value: L.prefs.volume, onchange: (e) => { L.prefs.volume = +e.target.value; savePrefs(L); } })),
+    h("label", {}, "loud alert for ", h("select", { onchange: (e) => { L.prefs.policy = e.target.value; savePrefs(L); render(); } },
+      [["all", "every signal"], ["min", "score ≥ minimum"], ["minconf", "score ≥ minimum and not low confidence"]].map(([v, t]) => h("option", { value: v, selected: L.prefs.policy === v }, t)))),
+    L.prefs.policy !== "all" ? h("label", {}, "minimum score ", h("input", { type: "number", min: 0, max: 100, value: L.prefs.min_score, style: "width:60px", onchange: (e) => { L.prefs.min_score = +e.target.value; savePrefs(L); } })) : null,
+    h("label", { title: "desktop notification when this tab is in the background" }, h("input", { type: "checkbox", checked: L.prefs.notify, onchange: async (e) => {
+      L.prefs.notify = e.target.checked; savePrefs(L); if (L.prefs.notify && "Notification" in window && Notification.permission !== "granted") await Notification.requestPermission(); } }), " desktop notification"),
+    h("span", { class: "mute" }, "Signals below the alert rule play a soft tone; exits a double beep; problems a low buzz. Pips before the tone = instrument number."));
+  // ---- setup (when the desk is not running) ----
+  let setup = null;
+  if (!running) {
+    const sel = (st.selr && st.selr.settings && st.selr.settings.instruments) || [];
+    L.setupInst = L.setupInst || (sel.length ? sel.slice(0, 4) : ["NIFTY"]);
+    const toggleI = (i) => { L.setupInst = L.setupInst.includes(i) ? L.setupInst.filter(x => x !== i) : L.setupInst.length < 4 ? [...L.setupInst, i] : (alert("At most 4 instruments."), L.setupInst); render(); };
+    const cell = (inst, sid) => L.pick[inst + "|" + sid];
+    const toggleC = (inst, sid) => { const k = inst + "|" + sid; if (L.pick[k]) delete L.pick[k]; else L.pick[k] = true; render(); };
+    const nPick = Object.keys(L.pick).filter(k => L.setupInst.includes(k.split("|")[0])).length;
+    const fromSelector = () => act(async () => {
+      const r = await api("/api/selector/run", { instruments: L.setupInst, day: L.mode === "replay" ? L.date : "" });
+      L.pick = {}; r.picks.forEach(p => { const s = strategies.find(x => x.slug === p.slug); if (s) L.pick[p.instrument + "|" + s.id] = true; });
+      if (!r.picks.length) alert("The selector found no strategy with enough evidence for these instruments today.");
+    });
+    const start = () => {
+      const picks = Object.keys(L.pick).map(k => k.split("|")).filter(([i]) => L.setupInst.includes(i)).map(([i, sid]) => ({ instrument: i, strategy_id: +sid }));
+      if (!picks.length) { alert("Tick at least one strategy for an instrument (or use the selector's picks)."); return; }
+      if (L.mode === "replay" && !L.date) { alert("Choose the replay day."); return; }
+      if (!Sound.on && !confirm("Sound is not enabled yet (click 'Enable sound' first). Start anyway?")) return;
+      act(() => api("/api/live/start", { picks, mode: L.mode, date: L.date, time: L.time, speed: L.speed }));
+    };
+    setup = h("div", { class: "card" }, h("b", {}, "Set up the desk"),
+      h("div", { class: "row small", style: "flex-wrap:wrap;gap:4px;margin:6px 0" }, h("span", {}, "Instruments (up to 4):"),
+        d.instruments.map(i => h("label", { class: "chip", style: `cursor:pointer;${L.setupInst.includes(i) ? "outline:2px solid var(--acc)" : ""}` }, h("input", { type: "checkbox", checked: L.setupInst.includes(i), onchange: () => toggleI(i) }), " ", i))),
+      h("table", {}, h("thead", {}, h("tr", {}, [h("th", {}, "Strategy"), ...L.setupInst.map(i => h("th", {}, i))])),
+        h("tbody", {}, strategies.map(s => h("tr", {}, h("td", { class: "small" }, s.name), ...L.setupInst.map(i => h("td", {}, h("input", { type: "checkbox", checked: !!cell(i, s.id), onchange: () => toggleC(i, s.id) }))))))),
+      h("div", { class: "row small", style: "flex-wrap:wrap;margin-top:8px" },
+        h("button", { onclick: fromSelector }, "Use the selector's picks"),
+        h("label", {}, h("input", { type: "radio", name: "lmode", checked: L.mode === "live", onchange: () => { L.mode = "live"; render(); } }), " live (market hours)"),
+        h("label", {}, h("input", { type: "radio", name: "lmode", checked: L.mode === "replay", onchange: () => { L.mode = "replay"; render(); } }), " rehearsal (replay a day)"),
+        L.mode === "replay" ? [h("input", { type: "date", value: L.date, onchange: (e) => { L.date = e.target.value; } }),
+          h("label", {}, "from ", h("input", { type: "time", value: L.time, onchange: (e) => { L.time = e.target.value; } })),
+          h("select", { onchange: (e) => { L.speed = e.target.value; } }, [["1", "1x"], ["10", "10x"], ["30", "30x"], ["60", "60x"]].map(([v, t]) => h("option", { value: v, selected: L.speed === v }, t)))] : null,
+        h("button", { class: "primary", onclick: start }, `Start desk (${nPick} strateg${nPick === 1 ? "y" : "ies"})`)),
+      h("div", { class: "mute small", style: "margin-top:4px" }, "Each ticked strategy runs on that instrument; its orders are NOT sent: they appear in the feed with their journal score. Live sessions wait for 09:15 and stop at the square-off."));
+  }
+  // ---- status strip ----
+  const om = F.openalgo;
+  const status = (desk.jobs || []).length ? h("div", { class: "card row small", style: "flex-wrap:wrap;gap:8px" },
+    h("b", {}, desk.mode === "replay" ? `REHEARSAL ${desk.date} ×${desk.speed}` : "LIVE"), h("span", {}, `market ${F.market}`),
+    !om ? null : !om.ok ? h("span", { class: "neg" }, "OpenAlgo not reachable") : om.analyze_mode ? h("span", { class: "pos" }, "Analyzer (paper)") : h("span", { class: "neg" }, "LIVE orders mode"),
+    Object.entries(F.instruments).map(([inst, r], idx) => {
+      const run = r.sessions.filter(x => x.status === "running").length, bad = r.sessions.filter(x => x.status === "failed" || x.error).length;
+      const stale = desk.mode === "live" && F.market === "open" && r.last_bar && minutesBetween(r.last_bar, (F.now || "").slice(11, 16)) > 3;
+      return h("span", { class: "chip", style: bad || stale ? "outline:2px solid #c0262d" : "" }, h("b", {}, `${idx + 1}·${inst}`),
+        ` ${r.last_close ?? "–"} @${r.last_bar || "–"} · VIX ${r.vix ?? "–"} · ${run}/${r.sessions.length} running` + (bad ? ` · ${bad} failed` : "") + (stale ? " · NO NEW CANDLES" : ""));
+    }),
+    h("span", { style: "flex:1" }), running ? h("button", { class: "danger", onclick: () => confirm("Stop every session of the desk?") && act(() => api("/api/live/stop", {})) }, "Stop desk") : h("span", { class: "mute" }, "desk stopped")) : null;
+  // ---- feed ----
+  const sigs = F.signals.filter(s => !L.dismissed[s.job_id + ":" + s.id]);
+  const card = (s) => {
+    const ce = /CE$/.test(s.symbol), buy = s.action === "BUY", sc = s.score;
+    const live = desk.mode === "live", sess = (F.instruments[s.instrument] || { sessions: [] }).sessions.find(x => x.job_id === s.job_id) || {};
+    const border = !buy ? "#667085" : ce ? "#0b7a46" : "#c0262d";
+    return h("div", { class: "card", style: `border-left:6px solid ${border};padding:8px 12px;margin-bottom:6px` },
+      h("div", { class: "row" }, h("b", { style: "font-size:16px" }, `${s.instrument} · ${buy ? (ce ? "BUY CE ▲" : "BUY PE ▼") : "EXIT ✕"}`),
+        h("span", { class: "mute" }, ` ${s.t} · ${s.name || s.slug}`), h("span", { style: "flex:1" }),
+        buy && sc && sc.score != null ? h("span", { class: "chip", title: sc.note }, h("b", { class: sc.score >= 60 ? "pos" : sc.score <= 40 ? "neg" : "" }, `score ${sc.score}`), ` ${sc.confidence}`) : null,
+        buy && loudFor(L, s) ? h("span", { class: "chip" }, "alert") : null),
+      h("div", { class: "small" }, `${s.symbol} × ${s.qty} @ ${s.price ?? "–"} · underlying ${s.underlying ?? "–"}`, buy && sc && sc.note ? h("span", { class: "mute" }, ` · ${sc.note}`) : null),
+      h("div", { class: "row small", style: "margin-top:4px" },
+        s.acted ? h("span", {}, `sent ${s.acted.paper ? "(paper)" : "(LIVE)"} #${s.acted.orderid || ""}`)
+          : live && sess.status === "running" ? h("button", { class: "primary small", onclick: () => confirm(`Send ${s.action} ${s.qty} ${s.symbol} as a MARKET order to OpenAlgo${om && om.analyze_mode ? " (Analyzer: paper)" : " (LIVE: real money)"}?`) && act(() => api(`/api/signals/${s.job_id}/act`, { signal_id: s.id })) }, "Act") : null,
+        h("button", { class: "small", onclick: () => { L.dismissed[s.job_id + ":" + s.id] = true; render(); } }, "Dismiss")));
+  };
+  const feed = (desk.jobs || []).length ? h("div", {}, h("h4", {}, `Signals (${sigs.length})`), sigs.length ? sigs.map(card) : h("div", { class: "mute small" }, "No signal yet.")) : null;
+  // ---- strategy board ----
+  const board = (desk.jobs || []).length ? h("div", { class: "card" }, h("b", {}, "Strategy board"),
+    h("table", {}, h("thead", {}, h("tr", {}, ["Instrument", "Strategy", "Status", "Signals", "Paper P&L (closed)", "Open position", ""].map(t => h("th", {}, t)))),
+      h("tbody", {}, Object.entries(F.instruments).flatMap(([inst, r]) => r.sessions.map(x => h("tr", {}, h("td", {}, inst), h("td", {}, x.name || x.slug, paramsText(x.params) ? h("div", { class: "mute small" }, paramsText(x.params)) : null),
+        h("td", {}, badge(x.status, x.status === "running"), x.error ? h("div", { class: "small neg" }, x.error.slice(0, 100)) : null), h("td", {}, x.signals), h("td", {}, money(x.pnl)),
+        h("td", { class: "small warn" }, x.open.map(o => `${o.symbol} ${o.qty} @ ${o.entry}`).join(", ")),
+        h("td", {}, h("button", { class: "small", onclick: () => { st.tab = "signals"; sigState().sel = x.job_id; refresh(); } }, "Open"))))))) ) : null;
+  // ---- chart per instrument ----
+  let chart = null;
+  if ((desk.jobs || []).length) {
+    const tabs = h("div", { class: "row" }, Object.keys(F.instruments).map(inst => h("button", { class: L.chart === inst ? "on primary" : "", onclick: () => { L.chart = inst; L.chartData = null; refresh(); } }, inst)),
+      L.chart ? h("button", { class: "small", onclick: () => { L.chart = null; L.chartData = null; render(); } }, "Hide chart") : h("span", { class: "mute small" }, " show a chart"));
+    let body = null;
+    const G = L.chartData;
+    if (L.chart && G) {
+      const tags = {}; G.members.forEach((m, i) => tags[m.id] = { tag: String.fromCharCode(65 + i), color: GROUP_COLORS[i % GROUP_COLORS.length] });
+      const cv = { bars: G.bars, vix: G.vix, signals: G.signals.map(s => ({ ...s, tag: tags[s.job_id].tag, color: tags[s.job_id].color })), states: (G.members[0] || {}).states || [], start: G.start, meta: G.meta, status: G.status };
+      body = h("div", {}, sigChart(cv), h("div", { class: "small mute" }, G.members.map(m => h("span", { style: `color:${tags[m.id].color};margin-right:10px` }, `${tags[m.id].tag} ${m.name || m.slug}`))));
+    } else if (L.chart) body = h("div", { class: "mute small" }, "loading chart…");
+    chart = h("div", { class: "card" }, tabs, body);
+  }
+  return h("div", {}, soundBar, setup, status, feed, board, chart);
 }
 
 // ---------- signals: run a strategy live or replay a cached day; its orders appear as signals you can act on ----------
@@ -1018,26 +1202,30 @@ function render() {
     return;
   }
   renderHeader(); renderTabs();
-  const v = { strategies: strategiesView, results: resultsView, data: dataView, instruments: instrumentsView, selector: selectorView, signals: signalsView, jobs: jobsView, backup: backupView }[st.tab]();
+  const v = { strategies: strategiesView, results: resultsView, data: dataView, instruments: instrumentsView, selector: selectorView, live: liveView, signals: signalsView, jobs: jobsView, backup: backupView }[st.tab]();
   const focus = document.activeElement && document.activeElement.id === "q";
   $("#view").replaceChildren(v);
   if (focus) { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
 }
 async function refresh() {
   try {
-    if (document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName) && document.activeElement.id !== "q" && st.data) return;   // do not clobber what the user is editing
+    if (document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName) && document.activeElement.id !== "q" && st.data) {
+      if (!st.page && st.tab === "live") await loadLive();       // keep the Live desk's sounds going; just do not redraw
+      return;                                                   // do not clobber what the user is editing
+    }
     st.data = await api("/api/state");
     if (!st.page && st.tab === "results") st.results = await api("/api/results");
     if (!st.page && st.tab === "data") st.dataList = await api("/api/data");
     if (!st.page && st.tab === "instruments" && !st.instBusy) st.instList = await api("/api/instruments");
     if (!st.page && st.tab === "signals") await loadSignals();
     if (!st.page && st.tab === "selector" && !(st.selr && st.selr.busy)) await loadSelector();
+    if (!st.page && st.tab === "live") { if (!st.selr || !st.selr.settings) await loadSelector(); await loadLive(); }
     if (!st.page && st.tab === "backup" && !st.backupBusy) st.backup = { preview: await api("/api/backup/preview"), list: await api("/api/backup/list") };
     render();
   } catch (e) { $("#banner").replaceChildren(h("div", { class: "banner" }, "Cannot reach the server: " + e.message)); }
 }
 refresh().then(route);
-setInterval(() => { if (!document.hidden && $("#modal").hidden) refresh(); }, 3000);
+setInterval(() => { if (st.tab === "live" && !st.page) { if ($("#modal").hidden) refresh(); else loadLive().catch(() => {}); } else if (!document.hidden && $("#modal").hidden) refresh(); }, 3000);   // the Live desk keeps polling in the background (sounds)
 </script>
 </body>
 </html>

@@ -252,9 +252,9 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [ ] Signals journal score: check on a real live session during market hours
 
 ## Phase 16: Live signal dashboard (PLANNED 2026-10-23, see plan.md section 17)
-- [ ] Feed endpoint /api/live/feed (new signals of all live sessions, all selected instruments + status) and a Live tab: instruments x strategies setup, status per instrument, one feed with instrument labels and filters, chart tab per instrument; replay rehearsal mode
+- [x] Feed endpoint /api/live/feed (new signals of all live sessions, all selected instruments + status) and a Live tab: instruments x strategies setup, status per instrument, one feed with instrument labels and filters, chart tab per instrument; replay rehearsal mode
 - [ ] Live runner: one process per instrument running all its strategies in threads with a shared, briefly cached data layer (candles, quotes, option candles) to keep OpenAlgo calls low
-- [ ] Sounds (Web Audio: CE/PE/exit tones, louder above the score threshold), Enable-sound button, desktop notification, title flash; only new signals sound
+- [x] Sounds (Web Audio: CE/PE/exit tones, louder above the score threshold), Enable-sound button, desktop notification, title flash; only new signals sound
 - [ ] Strategy board (live status, today P&L, journal history) and "recommended strategies" from the journal
 - [ ] Live runner fetches ATM call/put and traded option candles so live journal scores use all features
 - [ ] Market state (OpenAlgo market_timings / market_holidays), broker-login and data-freshness checks with a warning sound
@@ -271,3 +271,5 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - Phase 17 build notes (2026-10-23): market_days for 71 cached instrument-days; live labels from OpenAlgo (today: gap-down on NIFTY/BANKNIFTY/RELIANCE, VIX high); journal `day` feature group; edge report tests categories too; Selector tab with picks/avoid, walk-forward, news panel; market-researcher agent scheduled 09:00/13:00/15:00 (news_enabled), events merged into strategy_db/events.csv. Walk-forward on NIFTY/BANKNIFTY/RELIANCE, 14 days: selector +9,984 vs all +44,606 vs best so far +20,606 -> not proven yet; most conditions fall back to "all days"
 - [ ] News agent: first real run during market hours and check the JSON / sources (not run yet: it spends Claude budget)
 - [ ] Event calendar editing in the web app (today: edit strategy_db/events.csv by hand)
+- Phase 16 build notes (2026-10-23): Live tab with sound controls, desk setup (instruments x strategies or selector picks; live or rehearsal), status strip, feed cards with scores / Act / Dismiss, strategy board, chart per instrument; tested as a rehearsal (NIFTY+BANKNIFTY, 4 strategies, 7 BUY signals scored, stop, refusal of a second desk). Not yet tested: a real live session and the sounds in a browser
+- [ ] Live desk: shared per-instrument data runner (fewer OpenAlgo calls), market holidays from OpenAlgo
