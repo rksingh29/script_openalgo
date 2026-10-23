@@ -517,3 +517,60 @@ The dashboard runs the chosen strategies on **all selected instruments together*
 - **Strategy board**: rows = strategy x instrument.
 - **Sounds**: as planned, plus a short instrument cue (e.g. one/two/three pips before the tone) so the instrument is recognisable without looking; desktop notifications name the instrument.
 - Open question 17.9 "several instruments at once" is answered: yes.
+
+## 18. Strategy selection by success rate and market condition (PLAN, 2026-10-23)
+
+### 18.1 Goal
+Every morning, for each selected instrument, decide which strategies to run (and which to avoid) from **how they did on days like today**: gap up / gap down / flat open, volatility, expiry, results and macro events, and the overnight news. The pick feeds the Live desk ("recommended"), always with the evidence and its sample size. The selection rule itself is tested on past days before it is trusted.
+
+### 18.2 Day context (one record per instrument and day)
+New table `market_days` (instrument, day), filled for every cached day and each new day:
+- **Open**: `gap_pct` (open vs previous close) and `gap_class` = gap-up / gap-down / flat, with thresholds relative to the instrument's own volatility (e.g. |gap| > 0.4 x its 20-day average daily range = gap), plus `gap_filled_by_0945` (did price return to the previous close in the first 30 minutes).
+- **Previous day**: trend (close vs open, % of range), range vs its 20-day average (wide / normal / narrow), close position in its range.
+- **Volatility**: India VIX at the open, VIX vs its 20-day average (high / normal / low; needs daily VIX history, fetched with `INDIAVIX` interval D), VIX change overnight.
+- **Calendar**: weekday, days to expiry, expiry day / day before expiry, first trading day of the month.
+- **Opening behaviour (known at 09:45)**: opening-range width vs average, trend or range in the first 30 minutes (direction and ADX of 5m bars).
+- **Events** (18.3): `event_tags` such as `results_today`, `results_tomorrow`, `results_yesterday` (stocks), `rbi_policy`, `budget`, `cpi`, `us_fed`, `holiday_next_day`.
+- **News** (18.4): `news_sentiment` (-2..+2 per instrument), `news_tags` (e.g. downgrade, order win, sector news) and a one-line summary with sources.
+Every field is stamped with the time it became known; the selector only uses fields known before its decision time (no lookahead).
+
+### 18.3 Event calendar
+- **Results dates (stocks)**: from the company's board-meeting / financial-results announcements. Collected by a pre-market research step (18.4) and kept in `strategy_db/events.csv` (date, instrument, event, source URL), which the user can also edit by hand. Past results dates for the backfill window are collected once.
+- **Macro events** (RBI policy, Union budget, CPI, US Fed, index rebalancing): known weeks ahead; the same file, refreshed weekly.
+- Holidays come from OpenAlgo (`market_holidays`).
+
+### 18.4 News research (pre-market, optional, Claude budget-gated)
+- At ~08:45 a `market-researcher` agent (like the strategy researcher: WebSearch/WebFetch, output = structured JSON, sources required, pages treated as untrusted data) summarises for each selected instrument: overnight global cues and the GIFT Nifty indication, results/announcements, rating changes, sector news; it assigns `news_sentiment` and `news_tags` with a confidence and the source links.
+- It goes through the Claude usage gate (counts as a research run); skipped when the budget is used up; the selector then works without news.
+- News is stored per day so its value can be tested later like any other feature: until the journal shows that a news tag changes a strategy's result (edge report, q < 0.10), it is shown as context only and does not change the selection.
+
+### 18.5 Success rate (what "worked" means)
+- Measured per **strategy-day** (net P&L of the day > 0), not per trade: trades on the same day are not independent.
+- Per strategy and instrument, under a condition: days, day win rate with its Wilson 95% range, average daily net, profit factor, worst day.
+- Ranking uses the **lower end** of the win-rate range or the average daily net shrunk toward the strategy's overall result, so thin evidence does not rank first.
+
+### 18.6 The selector
+- **Step 1 (09:15-09:16, gap known)**: classify the day; for each instrument and strategy compute the success rate on past days with the same gap class (and VIX regime when there are enough days, then event tag); fall back to fewer conditions when a cell has fewer than ~8 days; pick the top N with evidence above the threshold (e.g. day win-rate lower bound > 45 % and profit factor > 1); list the "avoid" strategies (clearly negative under this condition).
+- **Step 2 (09:45, opening behaviour known)**: re-check with trend/range of the first 30 minutes; may switch strategies (trend-following on a trend open, mean-reversion on a range open) for the rest of the day.
+- **Output**: per instrument: picks, avoids, and the reason in words ("gap-down day, VIX high: Parabolic SAR won 7 of 9 such days on BANKNIFTY (range 45-94 %), PF 2.3"). "No strategy qualifies" is a valid answer (sit out).
+- **Use**: the Live desk pre-selects the picks (the user can change them); the Strategies tab shows today's picks; the trade_journal skill can explain them.
+
+### 18.7 Proving the selector works
+- Walk-forward replay: for each past day, run the selector using only EARLIER days, follow its picks, and compare the day's P&L with (a) running every strategy, (b) the single best strategy so far. Report per instrument and overall.
+- Adopt it as the default "recommended" only if it beats both over enough days (30+); otherwise show it as information.
+- Same multiple-comparison caution as the edge report: many conditions x strategies = many chances for luck; conditions are added sparingly.
+
+### 18.8 Data needed and risks
+- **More days**: conditions split the data (a gap-down + high-VIX day may occur 1 day in 10); with 13 nearest-expiry days today most cells are empty. The daily job (fetch, backfill, run every strategy) is the prerequisite; until then the selector mostly falls back to overall results and says so.
+- Daily VIX history and past results dates have to be backfilled once.
+- News quality: LLM summaries can be wrong; sources are required and kept; news never acts alone.
+- Gap thresholds and conditions are fixed in advance and changed rarely, to avoid fitting them to the past.
+
+### 18.9 Build order
+1. `market_days` table + classifier (gap, previous day, VIX regime, calendar, opening behaviour) for all cached days; daily VIX history.
+2. Journal and edge report get the day-condition features (gap_class, vix_regime, event tags) so they can be queried and tested.
+3. Selector (step 1 + 2) with explanations; Strategies tab "today's picks"; Live desk pre-selection.
+4. Walk-forward test of the selector against "all" and "best so far".
+5. Event calendar (`events.csv`: macro dates, results dates; manual editing in the web app).
+6. Pre-market news agent (optional, budget-gated), stored per day, used only as context until proven.
+7. Daily job (after close): fetch, backfill, run all strategies, rebuild journal and `market_days`, so the evidence grows every day.
