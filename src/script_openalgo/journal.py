@@ -446,10 +446,13 @@ def build(con=None, rebuild=False, cache=None, quiet=False):
             feats = compute_features(ctx)
             entry, exitp, qty = float(t["entry_price"]), float(t["exit_price"]), int(float(t["qty"]))
             pnl = float(t["gross_pnl"])
-            charges = _costs.round_trip(entry, exitp, qty, cfg.get("opt_exchange", "NFO"), cost_cfg)
+            short = t.get("side") == "short"                                    # option selling: entry = SELL, exit = BUY
+            charges = _costs.round_trip(exitp if short else entry, entry if short else exitp, qty, cfg.get("opt_exchange", "NFO"), cost_cfg)
             net = round(pnl - float(t.get("spread_cost") or 0) - charges, 2)     # gross - estimated spread - brokerage/charges
             net_total += net
             mfe, mae = _excursion(load, t["symbol"], r["day"], t["entry_time"], t["exit_time"], entry, qty)
+            if short and mfe is not None:                                       # a short gains when the premium falls
+                mfe, mae = -mae, -mfe
             row = {"run_id": r["id"], "strategy_id": r["strategy_id"], "slug": r["slug"], "instrument": r["instrument"], "day": r["day"],
                    "trade_no": n, "side": "CE" if t["symbol"].endswith("CE") else "PE", "symbol": t["symbol"], "qty": qty,
                    "entry_time": t["entry_time"], "exit_time": t["exit_time"], "entry_price": entry, "exit_price": exitp,

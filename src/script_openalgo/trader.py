@@ -9,9 +9,14 @@ The strategies decide WHEN (their own entries and exits). The manager decides WH
     consecutive losses, max open positions; Stop auto-trade (no new entries) and Flatten all (close everything now)
   - size: fixed lots per trade, or as many lots as fit in max_margin_per_trade (premium x lot size), checked against the
     available funds (OpenAlgo `funds`) in auto mode
-  - protection: a hard stop at -hard_stop_pct of the premium, and square-off at SQUARE_OFF (15:15)
+  - protection: a hard stop at -hard_stop_pct of the premium, a profit lock (once a trade's gross P&L first reaches
+    profit_lock_trigger, a floor at profit_lock_floor_pct % of it; 0 = off), and square-off at SQUARE_OFF (15:15)
   - every order's result is read back (`orderstatus`); rejected / unfilled orders are recorded, never assumed
   - costs (brokerage + statutory, costs.py) are deducted from every trade's P&L
+  - position transfer (user, 2026-11-02): on start, AutoManager.reconcile_open_positions() picks up any trade still
+    'open' in the ledger for this instrument today, so restarting for a code deployment never silently forgets a
+    real open position - it is then managed by the manager's generic protections above (not the strategy's own
+    exit signal, which does not resume for that trade; see the method's docstring)
 Ledger: tables trader_sessions, trader_trades, trader_events in the workspace DB.
 """
 import argparse
@@ -50,6 +55,9 @@ DEFAULTS = {
     "max_consecutive_losses": 3,
     "max_open_positions": 3,
     "hard_stop_pct": 25,         # exit if the premium falls this % below the entry
+    "profit_lock_trigger": 0,    # rupees: once an open trade's gross P&L first reaches this, lock a floor at
+                                  # profit_lock_floor_pct % of it (exit if P&L falls back to the floor); 0 = off
+    "profit_lock_floor_pct": 50, # the floor, as a % of profit_lock_trigger (e.g. trigger 1000, 50% -> floor 500)
     "square_off": "15:15",
 }
 _lock = threading.Lock()
@@ -115,13 +123,37 @@ def check_entry(cfg, book, stop_flag, side, score):
     return None
 
 
-def size_lots(cfg, inst_cfg, premium, lot):
-    """Lots for one entry: fixed lots, or what fits in max_margin_per_trade; capped by max_lots. 0 = cannot afford."""
+def size_lots(cfg, inst_cfg, premium, lot, mult=1, base=1):
+    """Lots for one entry: fixed lots (x `base`, the strategy's own normal entry size in lots -- e.g. 2 for a strategy
+    whose LOTS constant is 2 by design -- x `mult`, how many multiples of that normal size THIS signal is, e.g. 2 for
+    a doubled reversal leg), or what fits in max_margin_per_trade; capped by max_lots. 0 = cannot afford."""
     if cfg["sizing"] == "margin" and cfg["max_margin_per_trade"]:
         n = int(cfg["max_margin_per_trade"] // max(1e-9, premium * lot))
     else:
-        n = int(inst_cfg.get("lots") or 1)
+        n = int(inst_cfg.get("lots") or 1) * max(1, int(base)) * max(1, int(mult))
     return max(0, min(n, int(cfg["max_lots"] or n)))
+
+
+def sells_options(slug):
+    """True for a strategy that opens SHORT option positions (OPTION_SELLING = True): the manager buys options only, and
+    would read its SELL as an exit, so such strategies are refused."""
+    import os
+    import re
+    p = os.path.join(config.strategies_dir(), slug + ".py")
+    try:
+        return bool(re.search(r"^OPTION_SELLING\s*=\s*True", open(p, encoding="utf-8").read(), re.M))
+    except OSError:
+        return False
+
+
+def _lots_per(slug):
+    """The strategy's LOTS constant (its normal entry size), so a bigger order (reversal leg) is seen as a multiple."""
+    import importlib
+    sys.path.insert(0, config.strategies_dir())
+    try:
+        return max(1, int(getattr(importlib.import_module(slug), "LOTS", 1) or 1))
+    except Exception:
+        return 1
 
 
 def journal_score(con, slug, instrument, day, t, symbol, frames=None, dte=None):
@@ -141,66 +173,123 @@ def charges(instrument, entry, exit_, qty, con):
 
 
 # ---------------- simulation of a day ----------------
-def _strategy_signals(slug, instrument, day):
-    """Run the strategy on the cached day (FakeClient) and return its orders in time order (what it WANTED to do)."""
+def contract_params(inst_cfg):
+    """The Trade page's per-instrument contract choice as run options: EXPIRY (next week, monthly, ...) and STRIKE_OFFSET.
+    Empty = each strategy's saved options (or the file's ATM / nearest expiry)."""
+    from script_openalgo.backtest_core import instruments as I
+    out = {}
+    if inst_cfg.get("expiry"):
+        out[I.EXPIRY_KEY] = I.expiry_choice(inst_cfg["expiry"])
+    if inst_cfg.get("strike"):
+        out[I.STRIKE_KEY] = I.strike_offset(inst_cfg["strike"])
+    return out
+
+
+def _strategy_signals(slug, instrument, day, params=None):
+    """Run the strategy on the cached day (FakeClient) and return (signals, logs) in time order: signals are what it
+    WANTED to do; logs are its own narrative (the same lines the Signals tab shows), for the manager's log in
+    simulate() - matching AutoManager.run(), which captures this narrative into trader_events for live auto mode."""
     import io
     import contextlib
     from script_openalgo import signals as sig
 
-    out = []
+    out, logs = [], []
 
     class Collect:
-        def __init__(self):
-            self.lines = []
-
         def emit(self, kind, **data):
             if kind == "signal":
                 out.append(data)
+            elif kind == "log":
+                logs.append(data)
+    sig.PARAMS.clear()
+    sig.PARAMS.update(params or {})                          # the instrument's expiry / strike choice
     with contextlib.redirect_stdout(io.StringIO()):
         try:
             sig.run_replay(slug, instrument, day, None, 0, Collect())
         except SystemExit:
             pass
-    return out
+        finally:
+            sig.PARAMS.clear()
+    return out, logs
 
 
 def simulate(con, day, cfg, session=None, quiet=False):
     """What the manager would have done on a cached `day`: every strategy's signals in time order through the same rules,
     sizing, hard stop (from the option's 1m candles), square-off and costs. Writes a 'sim' session to the ledger."""
-    from script_openalgo.backtest_core import data_loader as dl, instruments
     ensure(con)
     cfg = cfg_with_defaults(cfg)
     session = session or f"sim-{day}-{datetime.now():%H%M%S}"
     con.execute("INSERT OR REPLACE INTO trader_sessions VALUES(?,?,?,?,?,?,?,?)",
                 (session, day, "sim", "running", json.dumps(cfg), db.now(), None, ""))
     con.commit()
+    try:
+        return _simulate_run(con, day, cfg, session, quiet)
+    except Exception as e:
+        con.execute("UPDATE trader_sessions SET status='failed', ended=?, note=? WHERE id=?",
+                    (db.now(), str(e)[:300], session))
+        con.commit()
+        raise
+
+
+def _simulate_run(con, day, cfg, session, quiet):
+    from script_openalgo.backtest_core import data_loader as dl
     book = Book(con, session)
     stream = []
     for inst, ic in cfg["instruments"].items():
         for slug in ic.get("strategies", []):
-            for s in _strategy_signals(slug, inst, date.fromisoformat(day)):
+            if sells_options(slug):
+                event(con, session, "error", f"{slug} sells options: the manager buys options only; not simulated", inst, slug)
+                continue
+            sigs, logs = _strategy_signals(slug, inst, date.fromisoformat(day), contract_params(ic))
+            for s in sigs:
                 stream.append((s["t"], inst, slug, s))
+            for l in logs:
+                event(con, session, "log", l["msg"], inst, slug, ts=f"{day}T{l['t']}")
     stream.sort(key=lambda x: x[0])
     mf = {inst: dl.load_manifest(date.fromisoformat(day), inst) or {} for inst in cfg["instruments"]}
-    open_pos = {}                                            # (inst, slug, symbol) -> trade id
+    open_pos = {}                                            # (inst, slug, symbol) -> position dict (see BUY branch below)
     sq = cfg["square_off"]
 
     def opt_candles(symbol):
         return dl.load_series(symbol, date.fromisoformat(day))
 
-    def close_trade(tid, t, price, reason):
+    def close_trade(key, t, price, reason, sell_strategy_qty=None):
+        """sell_strategy_qty: the strategy's own requested SELL quantity for this tranche (its own units, same space
+        as its BUY qty) -- None = force-close everything still open (hard stop / square-off), always final. A
+        strategy that scales out (partial then final SELL, e.g. vwap_standard_deviation_band_reversion_scalp) is
+        tracked across both SELLs and combined into one trade row with a quantity-weighted exit price, the same way
+        backtest_core/report.py already does for backtests -- the manager used to treat the FIRST SELL as closing
+        the whole position, silently losing the later leg's result."""
+        pos = open_pos[key]
+        tid = pos["id"]
         tr = con.execute("SELECT * FROM trader_trades WHERE id=?", (tid,)).fetchone()
-        gross = round((price - tr["entry_price"]) * tr["qty"], 2)
-        c = charges(tr["instrument"], tr["entry_price"], price, tr["qty"], con)
+        if sell_strategy_qty is None:
+            take_real = pos["qty"]
+            final = True
+        else:
+            take_strategy = min(sell_strategy_qty, pos["remaining_strategy_qty"])
+            final = take_strategy >= pos["remaining_strategy_qty"]
+            take_real = pos["qty"] if final else max(1, min(pos["qty"] - 1, round(tr["qty"] * take_strategy / pos["strategy_qty"])))
+            pos["remaining_strategy_qty"] -= take_strategy
+        pos["exit_notional"] += price * take_real
+        pos["exit_qty_done"] += take_real
+        pos["qty"] -= take_real
+        if not final:
+            event(con, session, "log", f"{tr['symbol']} partial exit @ {price:.2f} qty {take_real} (more to come)", tr["instrument"], tr["strategy"], ts=f"{day}T{t}")
+            return
+        avg_exit = pos["exit_notional"] / pos["exit_qty_done"]
+        gross = round((avg_exit - tr["entry_price"]) * tr["qty"], 2)
+        c = charges(tr["instrument"], tr["entry_price"], avg_exit, tr["qty"], con)
         con.execute("UPDATE trader_trades SET exit_time=?, exit_price=?, exit_order='SIM', status='closed', exit_reason=?, gross=?, costs=?, net=? WHERE id=?",
-                    (t, round(price, 2), reason, gross, c, round(gross - c, 2), tid))
+                    (t, round(avg_exit, 2), reason, gross, c, round(gross - c, 2), tid))
         con.commit()
-        event(con, session, "exit", f"{tr['symbol']} {reason} @ {price:.2f} net {gross - c:+.0f}", tr["instrument"], tr["strategy"], ts=f"{day}T{t}")
+        event(con, session, "exit", f"{tr['symbol']} {reason} @ {avg_exit:.2f} net {gross - c:+.0f}", tr["instrument"], tr["strategy"], ts=f"{day}T{t}")
+        del open_pos[key]
 
     def stop_check(upto):
         """Hard stops and square-off of open positions between their last check and `upto` (HH:MM:SS)."""
-        for key, tid in list(open_pos.items()):
-            tr = con.execute("SELECT * FROM trader_trades WHERE id=?", (tid,)).fetchone()
+        for key, pos in list(open_pos.items()):
+            tr = con.execute("SELECT * FROM trader_trades WHERE id=?", (pos["id"],)).fetchone()
             df = opt_candles(tr["symbol"])
             if df is None:
                 continue
@@ -210,12 +299,10 @@ def simulate(con, day, cfg, session=None, quiet=False):
             hit = seg[seg["low"] <= lvl]
             if cfg["hard_stop_pct"] and len(hit):
                 t0 = hit.index[0]
-                close_trade(tid, (t0 + pd.Timedelta(minutes=1)).strftime("%H:%M:%S"), min(lvl, float(hit["open"].iloc[0])), f"hard stop -{cfg['hard_stop_pct']}%")
-                del open_pos[key]
+                close_trade(key, (t0 + pd.Timedelta(minutes=1)).strftime("%H:%M:%S"), min(lvl, float(hit["open"].iloc[0])), f"hard stop -{cfg['hard_stop_pct']}%")
             elif upto >= sq + ":00":
                 last = df.loc[: pd.Timestamp(f"{day} {sq}") - pd.Timedelta(minutes=1)]
-                close_trade(tid, sq + ":00", float(last["close"].iloc[-1]), "square-off")
-                del open_pos[key]
+                close_trade(key, sq + ":00", float(last["close"].iloc[-1]), "square-off")
 
     for t, inst, slug, s in stream:
         stop_check(t)
@@ -226,7 +313,9 @@ def simulate(con, day, cfg, session=None, quiet=False):
             score, note = journal_score(con, slug, inst, day, t, s["symbol"], dte=mf[inst].get("days_to_expiry"))
             why = check_entry(cfg, book, None, "CE" if s["symbol"].endswith("CE") else "PE", score)
             lot = int(mf[inst].get("lot_size") or s["qty"])
-            lots = size_lots(cfg, cfg["instruments"][inst], s["price"], lot) if not why else 0
+            base = _lots_per(slug)
+            mult = max(1, s["qty"] // (lot * base))
+            lots = size_lots(cfg, cfg["instruments"][inst], s["price"], lot, mult, base) if not why else 0
             if not why and lots == 0:
                 why = f"cannot afford 1 lot within the margin limit ({s['price']} x {lot})"
             if why:
@@ -237,10 +326,11 @@ def simulate(con, day, cfg, session=None, quiet=False):
                               (session, day, "sim", inst, slug, "CE" if s["symbol"].endswith("CE") else "PE", s["symbol"], lots, lots * lot, t,
                                s["price"], "SIM", "open", f"{slug} signal", score, note, db.now()))
             con.commit()
-            open_pos[key] = cur.lastrowid
+            open_pos[key] = {"id": cur.lastrowid, "qty": lots * lot, "strategy_qty": s["qty"], "remaining_strategy_qty": s["qty"],
+                             "exit_notional": 0.0, "exit_qty_done": 0}
             event(con, session, "entry", f"BUY {lots} lot(s) {s['symbol']} @ {s['price']} (score {score})", inst, slug, ts=f"{day}T{t}")
         elif key in open_pos:
-            close_trade(open_pos.pop(key), t, s["price"], "strategy exit")
+            close_trade(key, t, s["price"], "strategy exit", s["qty"])
     stop_check("23:59:59")
     s = book.summary()
     con.execute("UPDATE trader_sessions SET status='done', ended=?, note=? WHERE id=?",
@@ -284,8 +374,29 @@ class AutoManager:
         self.api = api(api_key=config.api_key(), host=config.host())
         self.day = date.today().isoformat()
         self.book = Book(con, session)
-        self.positions = {}                                  # (slug, symbol) -> trade id
+        self.positions = {}                                  # (slug, symbol) -> position dict (see enter()/_close())
         self.lock = threading.Lock()
+        self.reconcile_open_positions()
+
+    def reconcile_open_positions(self):
+        """Pick up any position still 'open' in the ledger for this instrument today, from an earlier session that
+        was restarted (a code deployment, a crash) without being flattened first - so a real position is never
+        silently forgotten. Trade-manager only: Signals sessions never place real orders, so there is nothing to
+        transfer there. Limitation: only the manager's own generic protections (hard stop %, profit lock,
+        square-off, flatten) apply to a transferred position from here on - the strategy that originally opened it
+        starts fresh in the new session and will not resume its own strategy-specific exit signal for that trade.
+        A scale-out strategy's own partial-exit progress (if any had already happened before the restart) is not
+        recoverable either: the position is treated as fully open at its original entry quantity."""
+        rows = db.rows(self.con, "SELECT * FROM trader_trades WHERE instrument=? AND day=? AND status='open'",
+                       (self.inst, self.day))
+        opt_exchange = self.icfg.get("opt_exchange", "NFO")
+        for tr in rows:
+            self.positions[(tr["strategy"], tr["symbol"])] = {"id": tr["id"], "exchange": opt_exchange, "product": "MIS", "qty": tr["qty"],
+                                                               "strategy_qty": tr["qty"], "remaining_strategy_qty": tr["qty"],
+                                                               "exit_notional": 0.0, "exit_qty_done": 0}
+            self.log("info", f"transferred open position {tr['symbol']} (trade #{tr['id']}, entry {tr['entry_price']}) from an "
+                     f"earlier session - managed by hard stop / profit lock / square-off from here on, not its own strategy signal",
+                     tr["strategy"])
 
     def flag(self):
         return db.get_setting(self.con, f"trader_stop_{self.session}", "") or None
@@ -328,8 +439,10 @@ class AutoManager:
             score, note = journal_score(self.con, client.slug, self.inst, self.day, datetime.now().strftime("%H:%M:%S"), symbol)
             why = check_entry(self.cfg, self.book, self.flag(), side, score)
             lots_per = max(1, int(getattr(client.strat, "LOTS", 1) or 1))
-            lot = max(1, qty // lots_per)
-            lots = size_lots(self.cfg, self.cfg["instruments"].get(self.inst, {}), price, lot) if not why else 0
+            client._lot = getattr(client, "_lot", None) or max(1, qty // lots_per)     # lot size from the first (normal) entry
+            lot = client._lot
+            mult = max(1, qty // (lot * lots_per))
+            lots = size_lots(self.cfg, self.cfg["instruments"].get(self.inst, {}), price, lot, mult, lots_per) if not why else 0
             if not why and lots == 0:
                 why = f"cannot afford 1 lot within the margin limit ({price} x {lot})"
             if not why:
@@ -353,42 +466,67 @@ class AutoManager:
                                    (self.session, self.day, "auto", self.inst, client.slug, side, symbol, lots, lot * lots,
                                     datetime.now().strftime("%H:%M:%S"), fill, oid, "open", f"{client.slug} signal", score, note, db.now()))
             self.con.commit()
-            self.positions[(client.slug, symbol)] = {"id": cur.lastrowid, "exchange": exchange, "product": product, "qty": lot * lots}
+            self.positions[(client.slug, symbol)] = {"id": cur.lastrowid, "exchange": exchange, "product": product, "qty": lot * lots,
+                                                      "strategy_qty": qty, "remaining_strategy_qty": qty,
+                                                      "exit_notional": 0.0, "exit_qty_done": 0}
             client._fills[oid] = fill
             self.log("entry", f"BUY {lots} lot(s) {symbol} @ {fill} (score {score})", client.slug)
             return {"status": "success", "orderid": oid}
 
     def leave(self, client, symbol, exchange, product, qty, reason):
+        """qty: the strategy's own requested SELL quantity (its units) -- may be only part of the managed position
+        (a scale-out, e.g. vwap_standard_deviation_band_reversion_scalp's 1SD partial then VWAP-target final exit).
+        Only a true final tranche closes the managed position and finalizes the trader_trades row; a partial places
+        a real partial SELL and keeps the rest of the position open for the strategy's later exit signal."""
         with self.lock:
-            p = self.positions.pop((client.slug, symbol), None)
+            p = self.positions.get((client.slug, symbol))
             if not p:                                        # already closed by the manager (hard stop / flatten)
                 client._n += 1
                 oid = f"MGR{client._n:05d}"
                 client._fills[oid] = self.quote(symbol, exchange) or 0
                 return {"status": "success", "orderid": oid}
-            r = self._close(p, symbol, reason, client)
-            if r.get("status") != "success":
-                self.positions[(client.slug, symbol)] = p           # still open: the guard keeps trying (flatten / stops)
+            r = self._close(p, symbol, reason, client, strategy_qty=qty)
+            if r.get("status") == "success" and not r.get("partial"):
+                self.positions.pop((client.slug, symbol), None)
             return r
 
-    def _close(self, p, symbol, reason, client=None):
+    def _close(self, p, symbol, reason, client=None, strategy_qty=None):
+        """strategy_qty: the strategy's own requested SELL quantity for this tranche (its units) -- None = force-
+        close everything still open (hard stop / square-off / profit lock / flatten), always a final, full exit.
+        A partial tranche places a real partial SELL, updates the position's running weighted-average exit price
+        and remaining quantity, and leaves the position open (caller must not pop it) for the next tranche."""
+        tr = self.con.execute("SELECT * FROM trader_trades WHERE id=?", (p["id"],)).fetchone()
+        if strategy_qty is None:
+            take_real, final = p["qty"], True
+        else:
+            take_strategy = min(strategy_qty, p["remaining_strategy_qty"])
+            final = take_strategy >= p["remaining_strategy_qty"]
+            take_real = p["qty"] if final else max(1, min(p["qty"] - 1, round(tr["qty"] * take_strategy / p["strategy_qty"])))
         try:
-            oid, fill = self._order(symbol, p["exchange"], "SELL", p["qty"], p["product"])
+            oid, fill = self._order(symbol, p["exchange"], "SELL", take_real, p["product"])
         except RuntimeError as e:
             p["fails"] = p.get("fails", 0) + 1
             if p["fails"] in (1, 2) or p["fails"] % 30 == 0:         # first failures, then every ~5 minutes of retries
                 self.log("error", f"SELL {symbol} FAILED (attempt {p['fails']}): {e} -- CHECK THE POSITION IN OPENALGO",
                          client.slug if client else None)
             return {"status": "error", "message": str(e)}
-        tr = self.con.execute("SELECT * FROM trader_trades WHERE id=?", (p["id"],)).fetchone()
-        gross = round((fill - tr["entry_price"]) * tr["qty"], 2)
-        c = charges(self.inst, tr["entry_price"], fill, tr["qty"], self.con)
-        self.con.execute("UPDATE trader_trades SET exit_time=?, exit_price=?, exit_order=?, status='closed', exit_reason=?, gross=?, costs=?, net=? WHERE id=?",
-                         (datetime.now().strftime("%H:%M:%S"), fill, oid, reason, gross, c, round(gross - c, 2), p["id"]))
-        self.con.commit()
-        self.log("exit", f"SELL {symbol} {reason} @ {fill} net {gross - c:+.0f}", tr["strategy"])
+        if strategy_qty is not None:
+            p["remaining_strategy_qty"] -= take_strategy
+        p["exit_notional"] += fill * take_real
+        p["exit_qty_done"] += take_real
+        p["qty"] -= take_real
         if client:
             client._fills[oid] = fill
+        if not final:
+            self.log("exit", f"PARTIAL SELL {symbol} {reason} @ {fill} qty {take_real} (more to come)", tr["strategy"])
+            return {"status": "success", "orderid": oid, "partial": True}
+        avg_exit = p["exit_notional"] / p["exit_qty_done"]
+        gross = round((avg_exit - tr["entry_price"]) * tr["qty"], 2)
+        c = charges(self.inst, tr["entry_price"], avg_exit, tr["qty"], self.con)
+        self.con.execute("UPDATE trader_trades SET exit_time=?, exit_price=?, exit_order=?, status='closed', exit_reason=?, gross=?, costs=?, net=? WHERE id=?",
+                         (datetime.now().strftime("%H:%M:%S"), round(avg_exit, 2), oid, reason, gross, c, round(gross - c, 2), p["id"]))
+        self.con.commit()
+        self.log("exit", f"SELL {symbol} {reason} @ {avg_exit:.2f} net {gross - c:+.0f}", tr["strategy"])
         return {"status": "success", "orderid": oid}
 
     def guard(self, strategy_threads):
@@ -406,10 +544,21 @@ class AutoManager:
                         tr = self.con.execute("SELECT * FROM trader_trades WHERE id=?", (p["id"],)).fetchone()
                         ltp = self.quote(key[1], p["exchange"])
                         hard = ltp is not None and self.cfg["hard_stop_pct"] and ltp <= tr["entry_price"] * (1 - self.cfg["hard_stop_pct"] / 100)
-                        if flatten or hard:
+                        locked = False
+                        if ltp is not None and self.cfg["profit_lock_trigger"]:
+                            gross = (ltp - tr["entry_price"]) * tr["qty"]
+                            if p.get("lock_floor") is None:
+                                if gross >= self.cfg["profit_lock_trigger"]:
+                                    p["lock_floor"] = self.cfg["profit_lock_trigger"] * self.cfg["profit_lock_floor_pct"] / 100
+                                    self.log("info", f"{key[1]}: profit lock armed, {gross:+.0f} >= {self.cfg['profit_lock_trigger']} "
+                                             f"-> floor {p['lock_floor']:+.0f}", key[0])
+                            elif gross <= p["lock_floor"]:
+                                locked = True
+                        if flatten or hard or locked:
                             self.positions.pop(key, None)
                             why = "flatten (user)" if fl == "flatten" else "square-off" if now >= self.cfg["square_off"] else \
-                                "daily loss limit" if loss else f"hard stop -{self.cfg['hard_stop_pct']}%"
+                                "daily loss limit" if loss else f"hard stop -{self.cfg['hard_stop_pct']}%" if hard else \
+                                f"profit lock: floor {p['lock_floor']:+.0f}"
                             r = self._close(p, key[1], why)
                             if r.get("status") != "success":
                                 self.positions[key] = p              # retried on the next pass
@@ -423,6 +572,14 @@ class AutoManager:
         from script_openalgo import signals as sig
         slugs = self.cfg["instruments"].get(self.inst, {}).get("strategies", [])
         threads = []
+        refused = [x for x in slugs if sells_options(x)]
+        for x in refused:
+            self.log("error", f"{x} sells options: the manager buys options only; not started", x)
+        slugs = [x for x in slugs if x not in refused]
+        cp = contract_params(self.cfg["instruments"].get(self.inst, {}))
+        sig.PARAMS.update(cp)                                # one process per instrument: applies to all its strategies
+        if cp:
+            self.log("info", "contract: " + ", ".join(f"{k}={v}" for k, v in cp.items()))
         for slug in slugs:
             def go(slug=slug):
                 try:

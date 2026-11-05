@@ -490,3 +490,31 @@ The trade manager runs the chosen strategies and places their option BUY orders 
 5. **Ledger and log**: every trade with entry, exit, reason, journal score, gross, costs and net. The manager log says why each refused entry was refused.
 6. **Daily review**: choose the day and press Review: totals, per strategy and instrument, exits, refusals and observations.
 7. **Costs**: the rates (Dhan by default) are shown at the bottom; **Edit rates** to change them after checking a contract note.
+
+## 26. Strike choice and options saved per instrument
+
+Every strategy trades the ATM option by default. In any options panel (strategy page Run / Run range, Signals, Live desk set-up):
+- **Strike**: ATM, ATM+1 ... ATM+5 (out of the money: cheaper, needs a bigger move) or ATM-1 ... ATM-5 (in the money). Give strategies that run together different strikes to keep their positions apart. Backtests need those strikes in the cache (backfill a wider range if a run says the strike is not cached).
+- **Rupee values** (target, max loss, daily loss, lots) are listed first under "More options": a NIFTY value such as 1000 does not suit RELIANCE (lot 500) or OFSS.
+- **Save for <instrument>**: makes the changed values the strategy's standard on that instrument (shown in green as "saved"). They are used by every backtest, multi-day run, signal session, the Live desk and the trade manager on that instrument, and those runs count in the strategy's stats. "Remove saved <instrument> options" goes back to the file's values. Without Save, changes apply to one run only.
+
+**Expiry** (same options panel): *current* (the nearest, as before), *next* (the expiry after it: less time decay and gamma, slower premiums) or *auto* (next only on the current expiry's own day). Save it per instrument like the strike. Backtests and replays need the next expiry's candles: Data tab, "Fetch next-expiry options" (last 30 cached days) or `python -m script_openalgo.backtest_core.data_loader --instrument NIFTY --next-expiry --days 30`. Only listed contracts can be fetched, so fetch before that expiry passes; a run without them stops with "no expiry after ... in the data cache".
+
+## 27. Windows launcher (StrategyLabLauncher.exe)
+
+Build the release folder with `python launcher\build_exe.py` (after `python build_all.py`): `dist\StrategyLab\` holds `StrategyLabLauncher.exe` and the package files `script_openalgo-<version>-py3-none-any.whl` and `.tar.gz`. Copy the whole folder anywhere. The launcher installs the NEWEST package file it finds next to itself (or in the repo `dist`, if the repo is there; a .whl before a .tar.gz of the same version), so a new version only needs the new file dropped into the folder and **Update package**. The PC needs a Python (python.org, 3.11+) and, for the dependencies, the internet; `python launcher\build_exe.py --wheelhouse` adds a `wheelhouse` folder for an offline install on the same Python version. Settings are kept in `%APPDATA%\StrategyLab\launcher.json`; defaults point at the deployment (venv `G:\Claude\test_script\venv`, workspace `G:\Claude\test_script\my_workspace`).
+- **Paths** default to the launcher's own folder (`venv`, `my_workspace`, package files next to the exe); *Use this folder for all* resets them.
+- **OpenAlgo API key** (Setup tab): paste it (OpenAlgo web page > API Key) and press *Save key*: it is written ONLY to `<workspace>\.env` (`OPENALGO_API_KEY=...`, where Strategy Lab reads it), never to the launcher settings or the log. *Test (doctor)* checks it against OpenAlgo; restart the web app after changing it.
+- **Setup**: *1. Create venv (if missing) + install* (uses py -3 / python, or the Base Python you set), *Update package (newest wheel)* after `python build_all.py`, *Create workspace (if missing)*, *Doctor*. The status line shows venv / package version / workspace / newest wheel.
+- **Web app**: Start (opens the browser when it is up), Stop, Open in browser, live log. Stop ends only the web app; its jobs keep running and are picked up on the next start. Stop auto-trade in the Trade tab first.
+- **Data**: overview per instrument (cached days, complete, first / last day, next-expiry days, size); Fetch day, Backfill contract life, Next-expiry options (last N days), Option-chain snapshot, Sync results, Rebuild journal, Backup (export), Restore (import, with a check-only pass first), Open data folder. One command at a time; Stop ends it.
+
+## 28. Opening Strategy Lab from another device (phone, second PC)
+
+By default the web app answers only on this PC (127.0.0.1). For another device on your own network:
+1. Launcher, Setup tab: tick **allow other devices** (it creates an access token if there is none; **New access token** replaces it). The token is kept in `<workspace>\.env` as `STRATEGY_LAB_TOKEN`.
+2. Web app tab: Stop and Start the web app. Its log says `LAN access ON`.
+3. Setup tab: **Copy link** and open it once on the other device (`http://<this PC's IP>:5055/?token=...`). The device remembers the token for 30 days; afterwards plain `http://<this PC's IP>:5055` works.
+4. If the page does not load, allow Python through Windows Firewall for Private networks (Windows asks the first time).
+
+Strategy Lab has no login: anyone with the token can start auto-trade and send real orders. Use it only on your own network and keep the token private. Without a token the app refuses network access and stays on 127.0.0.1. Without the launcher: set `STRATEGY_LAB_BIND=0.0.0.0` and `STRATEGY_LAB_TOKEN=<12+ characters>` (environment or workspace `.env`) before `script-openalgo webapp`; `STRATEGY_LAB_HOSTS` adds host names such as `mypc.local`.

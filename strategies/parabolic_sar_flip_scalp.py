@@ -255,7 +255,7 @@ class Strategy:
         self.trend = []
         self.ema = []
         self.macd_hist = []
-        self.processed_bars = 0
+        self.last_bar_t = None   # timestamp cursor, not a list index: self.bars is rebuilt wholesale by refresh_bars()
 
         self.pending = None      # flip waiting for confirmation: {side, i, close, sar}
         self.position = None     # see try_enter() for shape
@@ -445,9 +445,11 @@ class Strategy:
 
     # ---------- bar-driven state machine ----------
     def process_new_bars(self):
-        while self.processed_bars < len(self.bars):
-            self.handle_new_bar(self.processed_bars)
-            self.processed_bars += 1
+        for i, b in enumerate(self.bars):
+            if self.last_bar_t is not None and b["t"] <= self.last_bar_t:
+                continue
+            self.handle_new_bar(i)
+            self.last_bar_t = b["t"]
 
     def in_time_window(self):
         return self.at(START_TIME) <= self.now() < self.at(NO_NEW_ENTRY_AFTER)
@@ -470,9 +472,9 @@ class Strategy:
         bar = self.bars[i]
         if flip:                                       # a new flip (also an opposite one) replaces any pending signal
             if self.pending and self.pending["side"] != flip:
-                log(f"Pending {self.pending['side']} flip from {self.bars[self.pending['i']]['t']:%H:%M} dropped: opposite flip")
+                log(f"Pending {self.pending['side']} flip from {self.pending['t']:%H:%M} dropped: opposite flip")
             if not self.position:
-                self.pending = {"side": flip, "i": i, "close": bar["c"], "sar": self.sar[i]}
+                self.pending = {"side": flip, "t": bar["t"], "close": bar["c"], "sar": self.sar[i], "bars": 0}
                 log(f"{flip} SAR flip at {bar['t']:%H:%M} close {bar['c']:.2f}: waiting {CONFIRM_BARS} candle(s) for confirmation")
             return
         p = self.pending
@@ -483,12 +485,13 @@ class Strategy:
         beyond = bar["c"] > need if p["side"] == "CE" else bar["c"] < need
         if not (same_side and beyond):
             why = "SAR side lost" if not same_side else f"close {bar['c']:.2f} not {'above' if p['side'] == 'CE' else 'below'} {need:.2f}"
-            log(f"{p['side']} flip from {self.bars[p['i']]['t']:%H:%M} NOT confirmed at {bar['t']:%H:%M}: {why}; no trade")
+            log(f"{p['side']} flip from {p['t']:%H:%M} NOT confirmed at {bar['t']:%H:%M}: {why}; no trade")
             self.pending = None
             return
-        if i - p["i"] < CONFIRM_BARS:
+        p["bars"] += 1
+        if p["bars"] < CONFIRM_BARS:
             return                                     # confirmed so far, more candles to wait for
-        log(f"{p['side']} flip from {self.bars[p['i']]['t']:%H:%M} confirmed at {bar['t']:%H:%M} (close {bar['c']:.2f} vs {p['close']:.2f})")
+        log(f"{p['side']} flip from {p['t']:%H:%M} confirmed at {bar['t']:%H:%M} (close {bar['c']:.2f} vs {p['close']:.2f})")
         self.pending = None
         self.try_enter(i, p["side"])
 

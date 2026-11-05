@@ -18,3 +18,7 @@ strategy_db/*.db-journal
 strategy_db/*.db-wal
 strategy_db/*.db-shm
 .claude/state/
+
+# launcher build (launcher/build_exe.py)
+build/
+launcher/.build_venv/

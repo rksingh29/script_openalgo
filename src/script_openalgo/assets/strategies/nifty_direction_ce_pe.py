@@ -7,11 +7,25 @@ option are strictly rising and the other's are not -> BUY that option.
 If both rise, Nifty's direction decides. If neither, roll the window.
 
 While in a trade (checked every minute):
-  cycle P&L >= +PROFIT_TARGET              -> exit all, cycle ends
+  cycle P&L >= +PROFIT_TARGET              -> exit all, cycle ends; or, with RIDE_TREND,
+      keep holding while every new completed 5-min Nifty candle makes a
+      higher high (CE position) / lower low (PE position); exit on the first
+      candle that does not, or if cycle P&L falls below the ride floor: the higher of RIDE_FLOOR_PCT % of the
+      target (100 = never give back below the target) and the best P&L of the ride minus RIDE_TRAIL_PCT %
+      (checked every RIDE_CHECK_SEC seconds while riding)
   cycle P&L <= -MAX_LOSS                   -> exit all, cycle ends
-  cycle P&L <= -REVERSAL_LOSS              -> BUY the opposite option, but
-      only if that option's last 3 five-minute readings are rising
-      (keeps the first leg open; at most MAX_REVERSALS times)
+  cycle P&L <= -REVERSAL_LOSS              -> BUY REVERSAL_LOTS lots (default 2) of the
+      opposite option, but only if that option's last 3 five-minute readings
+      are rising (keeps the first leg open; at most MAX_REVERSALS times), then
+      hold both legs until the cycle P&L reaches +PROFIT_TARGET (max loss and
+      square-off still apply)
+      REVERSAL_IN_RANGE = "exit": when the cycle first reaches -REVERSAL_LOSS and the market is range-bound
+      (RANGE_DETECTOR), exit the cycle instead of reversing (chop makes both legs lose). The range check is
+      logged at every such point ("RANGE CHECK ..."), also when the setting is off.
+      REVERSAL_PENDING_MAX_MIN: if the opposite option still hasn't shown RISING_READINGS rises this many
+      minutes after the cycle first reached -REVERSAL_LOSS, exit the cycle instead of waiting indefinitely
+      for the confirmation (a stuck, unconfirmed leg otherwise rides all the way to MAX_LOSS or square-off);
+      0 = off (old behaviour).
   SQUARE_OFF_TIME                          -> exit all, stop for the day
 
 After a cycle closes, wait COOLDOWN_MIN, then start a new cycle with a
@@ -28,6 +42,7 @@ from datetime import datetime, timedelta
 from openalgo import api
 
 from script_openalgo.strategy_lib import levels  # noqa: E402
+from script_openalgo.strategy_lib import regime  # noqa: E402
 
 # ======================= PARAMETERS =======================
 API_KEY = os.getenv("OPENALGO_API_KEY", "PASTE_YOUR_API_KEY_HERE")
@@ -45,6 +60,8 @@ NO_NEW_ENTRY_AFTER = "14:30"
 SQUARE_OFF_TIME = "15:15"
 
 READING_INTERVAL_MIN = 5   # direction readings
+READINGS_ON_CLOCK_GRID = False # readings at fixed times START_TIME + n x READING_INTERVAL_MIN (09:30, 09:35, ...), whenever
+                               # the process started, so Signals, the trade manager and backtests read at the same moments
 MONITOR_INTERVAL_SEC = 60  # P&L checks while in a trade
 RISING_READINGS = 3        # x0<x1<x2<x3 -> 3 consecutive rises
 
@@ -52,6 +69,18 @@ PROFIT_TARGET = 1000
 REVERSAL_LOSS = 1000
 MAX_LOSS = 2500
 MAX_REVERSALS = 1           # per cycle
+RIDE_TREND = True           # at PROFIT_TARGET keep riding while 5-min Nifty candles make higher highs (CE) / lower lows (PE)
+RIDE_CANDLE_MIN = 5         # candle size for the higher-high / lower-low check
+RIDE_FLOOR_PCT = 100        # while riding, exit if cycle P&L drops below this % of PROFIT_TARGET (100 = keep at least the target)
+RIDE_TRAIL_PCT = 0          # while riding, exit if cycle P&L falls this % below its best value so far; 0 = off (30 helped BANKNIFTY, hurt NIFTY)
+RIDE_CHECK_SEC = 15         # P&L check interval while riding (fast expiry-day premiums move a lot in a minute)
+REVERSAL_LOTS = 2           # lots bought on the reversal leg (opposite option); 1 = same size as the first leg
+REVERSAL_IN_RANGE = "reverse"  # at -REVERSAL_LOSS in a detected range: "reverse" (as before) or "exit" the cycle
+RANGE_DETECTOR = "box"      # "box" | "er" | "box_or_er" | "box_and_er" (see RANGE_BOX_ATR / RANGE_ER_BELOW)
+RANGE_BOX_ATR = 1.5         # box: index high-low since the cycle's entry is below this x ATR(14) of 5-min candles
+RANGE_ER_BELOW = 0.30       # er: efficiency ratio (10 x 5-min candles) below this = noisy, no direction
+REVERSAL_PENDING_MAX_MIN = 0  # exit the cycle if the opposite option still hasn't shown RISING_READINGS rises
+                               # this many minutes after first hitting -REVERSAL_LOSS; 0 = off, wait indefinitely
 
 # ---- multiple cycles per day ----
 MAX_CYCLES = 5              # max trade cycles in one day
@@ -91,9 +120,16 @@ class Strategy:
         self.reversals = 0
         self.done = False
         self.pending_logged = False
+        self.entry_t = None         # time of the cycle's first leg (range box starts here)
+        self.range_checked = False  # the range check runs once per cycle, at the first -REVERSAL_LOSS
+        self.reversal_pending_since = None  # time of the first -REVERSAL_LOSS breach this cycle (REVERSAL_PENDING_MAX_MIN)
         self.cpr = None             # previous-day CPR, loaded on first use (BIAS_FILTER)
         self.prev_cpr = None
         self.expiry_str = None
+        self.riding = False         # RIDE_TREND: past the profit target, following the trend
+        self.ride_peak = 0.0        # best cycle P&L while riding (RIDE_TRAIL_PCT)
+        self.ride_side = None
+        self.ride_seen = None       # start time of the last candle already checked
 
     # ---------- time helpers ----------
     def at(self, s):
@@ -161,8 +197,8 @@ class Strategy:
         return all(a < b for a, b in zip(values, values[1:]))
 
     # ---------- orders ----------
-    def buy(self, symbol, reason):
-        qty = self.lot * LOTS
+    def buy(self, symbol, reason, lots=None):
+        qty = self.lot * (lots or LOTS)
         r = self.c.placeorder(strategy=STRATEGY, symbol=symbol, action="BUY",
                               exchange=OPT_EXCHANGE, price_type="MARKET",
                               product=PRODUCT, quantity=qty)
@@ -172,6 +208,8 @@ class Strategy:
         oid = r.get("orderid")
         price = self.fill_price(oid) or self.ltp(symbol, OPT_EXCHANGE)
         nifty = self.ltp(UNDERLYING, INDEX_EXCHANGE)
+        if not self.legs:
+            self.entry_t = self.now()
         self.legs.append({"symbol": symbol, "qty": qty, "price": price})
         log(f"BUY {symbol} qty {qty} @ {price} | order {oid} | Nifty {nifty} | {reason}")
         return True
@@ -218,10 +256,27 @@ class Strategy:
         log("P&L " + " | ".join(parts) + f" | TOTAL {total:+.0f}")
         return total
 
+    def next_grid(self, after, strictly=False):
+        """The next reading time: START_TIME + n x READING_INTERVAL_MIN at or after `after` (strictly after when asked).
+        READINGS_ON_CLOCK_GRID off: the old behaviour, counted from `after` itself."""
+        base = self.at(START_TIME)
+        if not READINGS_ON_CLOCK_GRID:
+            return after.replace(second=0, microsecond=0) + (timedelta(minutes=READING_INTERVAL_MIN) if strictly else timedelta(0))
+        if after < base or (after == base and not strictly):
+            return base
+        step = READING_INTERVAL_MIN * 60
+        n = -(-int((after - base).total_seconds()) // step)          # ceil
+        t = base + timedelta(seconds=n * step)
+        return t + timedelta(seconds=step) if strictly and t <= after else t
+
+    def sleep_until_or(self, seconds, next_reading):
+        """Sleep `seconds`, but wake up for the next reading time."""
+        self.sleep(max(1, min(seconds, (next_reading - self.now()).total_seconds() + 1)))
+
     # ---------- phases ----------
     def find_entry(self):
         """Returns 'CE', 'PE' or None (day over)."""
-        next_t = max(self.now().replace(second=0, microsecond=0), self.at(START_TIME))
+        next_t = self.next_grid(max(self.now().replace(microsecond=0), self.at(START_TIME)))
         while True:
             self.wait_until(next_t)
             if self.now() >= self.at(NO_NEW_ENTRY_AFTER):
@@ -273,9 +328,107 @@ class Strategy:
         log(f"Bias {b['bias']} ({'; '.join(b['reasons'])}) -> {side} {'allowed' if ok else 'BLOCKED'}")
         return ok
 
+    def candles(self):
+        """Completed RIDE_CANDLE_MIN-minute Nifty candles of today (a candle still forming is dropped)."""
+        today = self.now().date().isoformat()
+        try:
+            df = self.c.history(symbol=UNDERLYING, exchange=INDEX_EXCHANGE, interval=f"{RIDE_CANDLE_MIN}m",
+                                start_date=today, end_date=today, source="api")
+        except Exception as e:
+            log(f"candle fetch failed: {e}")
+            return None
+        if not hasattr(df, "index") or len(df) == 0:
+            return None
+        now = self.now()
+        done = [ix for ix in df.index if ix.to_pydatetime().replace(tzinfo=None) + timedelta(minutes=RIDE_CANDLE_MIN) <= now]
+        return df.loc[done]
+
+    def range_check(self):
+        """Is the market range-bound right now? Cycle box (index high-low since the entry vs ATR of 5-min candles, the
+        previous days' candles included for the ATR warm-up) and efficiency ratio; completed candles only. Logged; a data
+        problem counts as 'not range' (behaviour as before)."""
+        import pandas as pd
+        try:
+            today = self.now().date()
+            if getattr(self, "_warm5", None) is None or self._warm5[0] != today:
+                w = self.c.history(symbol=UNDERLYING, exchange=INDEX_EXCHANGE, interval="5m",
+                                   start_date=(today - timedelta(days=7)).isoformat(),
+                                   end_date=(today - timedelta(days=1)).isoformat(), source="api")
+                w = w[[ix.date() < today for ix in w.index]] if hasattr(w, "index") and len(w) else None
+                self._warm5 = (today, w)
+            c5 = self.candles()                              # today's completed 5-min candles
+            parts = [x for x in (self._warm5[1], c5) if x is not None and len(x)]
+            if not parts:
+                raise ValueError("no 5-min candles")
+            df = pd.concat(parts)[["open", "high", "low", "close"]]
+            df.index = [ix.to_pydatetime().replace(tzinfo=None) for ix in df.index]
+            atr = float(regime.atr(df, 14).iloc[-1])
+            er = regime.efficiency_ratio(df["close"], 10).iloc[-1]
+            er = None if pd.isna(er) else float(er)
+            m1 = self.c.history(symbol=UNDERLYING, exchange=INDEX_EXCHANGE, interval="1m",
+                                start_date=today.isoformat(), end_date=today.isoformat(), source="api")
+            now = self.now()
+            box = None
+            if hasattr(m1, "iterrows") and len(m1):
+                t = [ix.to_pydatetime().replace(tzinfo=None) for ix in m1.index]
+                keep = [(tt >= self.entry_t.replace(second=0, microsecond=0) and tt + timedelta(minutes=1) <= now) for tt in t]
+                seg = m1[keep]
+                if len(seg):
+                    box = float(seg["high"].max() - seg["low"].min())
+        except Exception as e:
+            log(f"RANGE CHECK unavailable ({e}); treated as not range-bound")
+            return False
+        box_atr = box / atr if box is not None and atr else None
+        is_box = box_atr is not None and box_atr < RANGE_BOX_ATR
+        is_er = er is not None and er < RANGE_ER_BELOW
+        verdict = {"box": is_box, "er": is_er, "box_or_er": is_box or is_er, "box_and_er": is_box and is_er}.get(RANGE_DETECTOR, False)
+        log(f"RANGE CHECK: box {box if box is None else round(box, 1)} pts = {box_atr if box_atr is None else round(box_atr, 2)} x ATR "
+            f"{atr:.1f} (range < {RANGE_BOX_ATR}) | ER {er if er is None else round(er, 2)} (range < {RANGE_ER_BELOW}) "
+            f"-> {RANGE_DETECTOR}: {'RANGE' if verdict else 'no range'}"
+            + ("" if REVERSAL_IN_RANGE == "exit" else " (REVERSAL_IN_RANGE off: logged only)"))
+        self.range_state = {"box_atr": None if box_atr is None else round(box_atr, 2), "er": None if er is None else round(er, 2),
+                            "range": verdict}
+        return verdict
+
+    def ride(self, p):
+        """Past the profit target: True = keep holding, False = exit (exit_all already called)."""
+        if not self.riding:
+            self.riding = True
+            self.ride_peak = p
+            self.ride_side = "CE" if self.legs[-1]["symbol"].endswith("CE") else "PE"
+            c = self.candles()
+            self.ride_seen = c.index[-1] if c is not None and len(c) else None
+            log(f"profit target reached ({p:+.0f}): riding the {self.ride_side} trend while {RIDE_CANDLE_MIN}-min candles make "
+                f"{'higher highs' if self.ride_side == 'CE' else 'lower lows'}")
+            return True
+        self.ride_peak = max(self.ride_peak, p)
+        floor = PROFIT_TARGET * RIDE_FLOOR_PCT / 100
+        trail = self.ride_peak * (1 - RIDE_TRAIL_PCT / 100) if RIDE_TRAIL_PCT else None
+        if trail is not None and trail > floor:
+            floor, why = trail, f"{RIDE_TRAIL_PCT}% below the ride's best {self.ride_peak:+.0f}"
+        else:
+            why = f"{RIDE_FLOOR_PCT}% of the target"
+        if p < floor:
+            self.exit_all(f"ride: profit fell below the floor ({p:+.0f} < {floor:.0f}, {why})")
+            return False
+        c = self.candles()
+        if c is None or len(c) < 2 or (self.ride_seen is not None and c.index[-1] <= self.ride_seen):
+            return True                                   # no new completed candle yet
+        last, prev = c.iloc[-1], c.iloc[-2]
+        self.ride_seen = c.index[-1]
+        if self.ride_side == "CE":
+            ok, what = last["high"] > prev["high"], f"high {last['high']:.2f} vs {prev['high']:.2f}"
+        else:
+            ok, what = last["low"] < prev["low"], f"low {last['low']:.2f} vs {prev['low']:.2f}"
+        if ok:
+            log(f"ride: {'higher high' if self.ride_side == 'CE' else 'lower low'} ({what}), holding at {p:+.0f}")
+            return True
+        self.exit_all(f"ride ended: no {'higher high' if self.ride_side == 'CE' else 'lower low'} ({what}) at {p:+.0f}")
+        return False
+
     def manage(self):
         holding = {leg["symbol"] for leg in self.legs}
-        next_reading = self.now() + timedelta(minutes=READING_INTERVAL_MIN)
+        next_reading = self.next_grid(self.now(), strictly=True) if READINGS_ON_CLOCK_GRID else             self.now() + timedelta(minutes=READING_INTERVAL_MIN)
         while not self.done:
             if self.now() >= self.at(SQUARE_OFF_TIME):
                 self.exit_all("square-off time")
@@ -286,14 +439,31 @@ class Strategy:
                 next_reading += timedelta(minutes=READING_INTERVAL_MIN)
             p = self.pnl()
             if p is not None:
-                if p >= PROFIT_TARGET:
-                    self.exit_all(f"profit target hit ({p:+.0f})")
-                    break
+                if self.riding or p >= PROFIT_TARGET:
+                    if not RIDE_TREND:
+                        self.exit_all(f"profit target hit ({p:+.0f})")
+                        break
+                    if not self.ride(p):
+                        break
+                    self.sleep_until_or(RIDE_CHECK_SEC, next_reading) if READINGS_ON_CLOCK_GRID else self.sleep(RIDE_CHECK_SEC)
+                    continue
                 # never let one cycle breach the remaining daily loss budget
                 cap = min(MAX_LOSS, DAILY_MAX_LOSS + self.day_pnl)
                 if p <= -cap:
                     self.exit_all(f"max loss hit ({p:+.0f}, limit {cap:.0f})")
                     break
+                if p <= -REVERSAL_LOSS and self.reversals < MAX_REVERSALS:
+                    if self.reversal_pending_since is None:
+                        self.reversal_pending_since = self.now()
+                    elif REVERSAL_PENDING_MAX_MIN and self.now() - self.reversal_pending_since >= timedelta(minutes=REVERSAL_PENDING_MAX_MIN):
+                        self.exit_all(f"reversal still pending after {REVERSAL_PENDING_MAX_MIN} min ({p:+.0f})")
+                        break
+                if p <= -REVERSAL_LOSS and self.reversals < MAX_REVERSALS and not self.range_checked:
+                    self.range_checked = True
+                    in_range = self.range_check()
+                    if in_range and REVERSAL_IN_RANGE == "exit":
+                        self.exit_all(f"range-bound at {p:+.0f}: exit instead of reversing ({RANGE_DETECTOR})")
+                        break
                 if (p <= -REVERSAL_LOSS and self.reversals < MAX_REVERSALS
                         and (new_reading or not self.pending_logged)):
                     self.pending_logged = True
@@ -301,12 +471,12 @@ class Strategy:
                     key = "pe" if opp == self.pe_sym else "ce"
                     vals = [r[key] for r in self.readings[-RISING_READINGS:]]
                     if len(vals) == RISING_READINGS and self.rising(vals):
-                        if self.buy(opp, f"reversal: loss {p:+.0f}, {key.upper()} rising {vals}"):
+                        if self.buy(opp, f"reversal: loss {p:+.0f}, {key.upper()} rising {vals}, {REVERSAL_LOTS} lot(s)", REVERSAL_LOTS):
                             self.reversals += 1
                             holding.add(opp)
                     else:
                         log(f"Reversal pending: {key.upper()} not rising {vals}")
-            self.sleep(MONITOR_INTERVAL_SEC)
+            self.sleep_until_or(MONITOR_INTERVAL_SEC, next_reading) if READINGS_ON_CLOCK_GRID else self.sleep(MONITOR_INTERVAL_SEC)
 
     def run(self):
         log(f"Strategy {STRATEGY} starting")

@@ -287,3 +287,23 @@ Legend: [x] done, [ ] todo. Order is the build order.
 - [ ] First paper session in market hours (Analyzer ON)
 - [ ] MCP server for suggestions (read-only; kill switch only if allowed)
 - [ ] Trailing / profit-protect exit option in the manager
+- [x] nifty_all_time_pe (user spec 2026-10-24): OR breakout, uptrend = sell 2 lots OTM PE at ~half the ATM premium, downtrend = buy 1 lot ATM PE, target 1000 + RIDE_TREND, MAX_LOSS 2500; backtest short support in report/journal; NIFTY 5 days +9148 net (REMOVED 2026-10-24 at the user's request; short support kept)
+- [ ] Option selling: margin check, live paper session, Signals-page P&L for shorts, trade-manager support for short legs (if wanted)
+- [x] Strike choice (ATM / ATM+1..5 / ATM-1..5) for every strategy via StrikeClient, and options saved per strategy x instrument (strategy_params.json, 'Save for <instrument>') (2026-10-25)
+- [x] Expiry option current / next / auto for every strategy (client wrapper), next-expiry data fetch (data_loader --next-expiry, Data tab), FakeClient multi-expiry (2026-10-25). Real next-expiry fetch not yet run (broker returned no data on Sunday)
+- [x] Windows launcher exe (launcher/, PyInstaller): venv create/install/update, web app start/stop, data management (2026-10-25)
+- [x] donchian_channel_breakout_scalp added (id 17, researcher spec; duplicate-checked), code + backtest, multiday all instruments (2026-10-25). Open: STOP_MAX_PCT per stock (0.4 skips every stock trade; RELIANCE looks good at 1.5)
+- [x] Trade tab: expiry (next week / week+1 / week+2 / monthly / next month / auto) and strike per instrument; nifty_direction ride floor 100 % of target, 15 s checks while riding, optional trail (2026-10-28)
+
+## Phase 19: range-bound market detection for nifty_direction_ce_pe (PLANNED 2026-10-28, plan.md section 20)
+- [ ] strategy_lib/regime.py: cycle box, efficiency ratio, CHOP, ADX, direction flips, premium bleed (+ synthetic checks)
+- [ ] Log the detector values at readings / entry / reversal; journal feature group `regime`
+- [ ] More data: backfill, copy the live workspace's cached days, replay the live sessions
+- [ ] Label reversals good / bad; detector separation table (bad stopped vs good killed)
+- [ ] Settings (off by default): REVERSAL_IN_RANGE (exit / wait), RANGE_EXIT + REVERSAL_TIME_STOP_MIN, RANGE_SCRATCH_RS, ENTRY_IN_RANGE, MIN_CYCLE_BUDGET, rising tolerance, fast checks near the loss limit
+- [ ] Multiday comparison per setting and instrument; choose on a plateau; paper 5 sessions before live
+- [x] Range check at the reversal point (cycle box + efficiency ratio), logged always; REVERSAL_IN_RANGE exit with box_and_er: plateau box >= 1.5 x ATR, ER 0.25-0.35 beats always-reverse on NIFTY/BANKNIFTY/SENSEX (2026-10-28). Open: choose default with the user, paper 5 sessions
+- [x] LAN access to the web app: STRATEGY_LAB_BIND + access token (cookie), Host allow-list from this PC's IPs; launcher Network access (2026-10-28). Not yet tested on a real second device (listener test blocked here)
+- [x] Trade tab: a session was closed 1 s after its start (status poll before the job list was saved), hiding Stop / Flatten while the processes traded; _trader_active now also finds the session's jobs by meta and gives a starting session 120 s (2026-10-28)
+- [x] Expiry choices follow the instrument's cycle (BANKNIFTY / stocks: current month, next month, month + 2, auto); 'allow live orders' switch also on the Trade tab (2026-10-28)
+- [ ] nifty_direction_ce_pe: entry is timing-fragile (reading-phase test 2026-10-28: BANKNIFTY +19.6k to -36k by shifting readings 1 min). Make the entry robust (window average / candle based) and require positive results across all reading phases before live; READINGS_ON_CLOCK_GRID option added (off)

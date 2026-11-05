@@ -180,7 +180,7 @@ class Strategy:
         self.upper = []
         self.lower = []
         self.bw = []                # band width (upper - lower), aligned with bars
-        self.processed_bars = 0
+        self.last_bar_t = None   # timestamp cursor, not a list index: self.bars is rebuilt wholesale by refresh_bars()
 
         self.squeeze_idx = None     # index of the latest "20-bar-low BB width" bar
         self.squeeze_width = None   # band width recorded at that bar
@@ -362,9 +362,11 @@ class Strategy:
 
     # ---------- bar-driven state machine ----------
     def process_new_bars(self):
-        while self.processed_bars < len(self.bars):
-            self.handle_new_bar(self.processed_bars)
-            self.processed_bars += 1
+        for i, b in enumerate(self.bars):
+            if self.last_bar_t is not None and b["t"] <= self.last_bar_t:
+                continue
+            self.handle_new_bar(i)
+            self.last_bar_t = b["t"]
 
     def handle_new_bar(self, i):
         self.update_squeeze(i)

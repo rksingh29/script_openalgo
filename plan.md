@@ -603,3 +603,53 @@ Tables `trader_sessions`, `trader_trades`, `trader_events` in the workspace DB. 
 - MCP server (`script-openalgo mcp`): read-only status / review / suggestions for Claude; the kill switch only if the user allows it.
 - A first real paper session in market hours (the auto path was tested with a mock OpenAlgo client only).
 - Trailing / profit-protect exits as a manager option.
+
+## 20. nifty_direction_ce_pe: detect range-bound (choppy) markets, early exit (PLANNED 2026-10-28)
+
+### 20.1 Problem
+A cycle enters on 3 rising 5-min readings, waits until the cycle loses REVERSAL_LOSS (1000), then buys the opposite option
+x 2 lots. In a range the index turns back again: both legs lose (premium decay on both sides, IV flat or falling) until
+MAX_LOSS (2500) or the daily loss. Seen live: 2026-10-27 session 1 cycle 2 (CE, reversal PE x 2 at 11:08, -2632), BANKNIFTY
+2026-10-28 (two cycles, -3728). The reversal itself is profitable overall on the cached days (without it: NIFTY 16476 ->
+13420, BANKNIFTY 21592 -> 15810), so the aim is to skip or cut it in a RANGE, not to remove it.
+
+### 20.2 Range detectors (completed 5-min index candles only, no lookahead; strategy_lib/regime.py)
+| Detector | Range when | Why |
+|---|---|---|
+| Cycle box | since the cycle's entry the index has crossed back over the entry level and stays inside [cycle low, cycle high] whose width < BOX_ATR x ATR(14, 5m) | the move that triggered the entry failed and nothing broke out |
+| Efficiency ratio ER(N=12) | abs(net change) / sum(abs(changes)) < 0.3 | price travels a lot but gets nowhere |
+| Choppiness index CHOP(14) | > 61.8 (trend < 38.2) | standard range measure |
+| ADX(14) | < 20 | no directional strength (already used in Camarilla) |
+| Direction flips | >= 3 sign changes of the 5-min reading-to-reading index move in the last 6 readings | the strategy's own readings disagree |
+| Premium bleed | CE and PE premiums both fell over the last 3 readings | theta / IV crush: an option BUYER loses on both sides |
+
+### 20.3 Actions (each a setting, off by default; one is tested at a time, then the best combination)
+1. Reversal gate (REVERSAL_IN_RANGE = reverse | exit | wait): at -REVERSAL_LOSS in a detected range, EXIT the cycle (take
+   about -1000) instead of adding 2 lots; "wait" = reverse only once the range breaks (close beyond the cycle box).
+2. Early exit after a reversal (RANGE_EXIT): both legs open + range detected for RANGE_EXIT_CANDLES (e.g. 2) candles -> exit
+   all; or a time stop: combined P&L not better than -REVERSAL_LOSS/2 within REVERSAL_TIME_STOP_MIN (e.g. 30) minutes.
+3. Scratch exit in a range (RANGE_SCRATCH_RS): after a reversal, if the combined P&L comes back to about -300 / breakeven
+   while the range persists, take it (do not wait for +PROFIT_TARGET inside a range).
+4. Entry gate (ENTRY_IN_RANGE = trade | skip): no new cycle while the range detector is on; after a max-loss cycle the next
+   cycle needs a trending reading (ER >= 0.3 or ADX >= 20).
+5. Budget gate (MIN_CYCLE_BUDGET): no new cycle when less than this is left of DAILY_MAX_LOSS (2026-10-28: a cycle started
+   with 406 left and lost 1134).
+6. Mechanics already found: "rising" with a tolerance / minimum % rise (a 0.50 dip blocked a 7 % rise), P&L checks every
+   15 s once the loss passes 60 % of the active limit (exits overshot: -2594 vs -2500, -1134 vs -406).
+
+### 20.4 Measure before choosing (no tuning on a handful of days)
+1. Log only (no behaviour change): the detector values at every reading, entry and reversal, as strategy `state` and in the
+   log; a journal feature group `regime` at entry and at the reversal time.
+2. Data: backfill more days first (NIFTY has 5 nearest-expiry days, BANKNIFTY 13); copy the live workspace's cached days
+   (H:\newTest\StrategyLab\my_workspace\data_cache) into the repo cache; replay the live sessions' days.
+3. Label every reversal in the backtests (multiday) and live ledgers: good (cycle ended > 0) / bad. Per detector: how many
+   BAD reversals it would have stopped vs GOOD ones it would have killed (2026-10-27 session 2 cycle 1, +3588, must survive).
+4. Pick thresholds on a plateau (neighbouring values give similar results), not the single best value; check NIFTY,
+   BANKNIFTY, SENSEX separately; hold out the newest days.
+5. Paper (Analyzer) for at least 5 sessions with the chosen settings before LIVE; compare with the Trade tab's simulation.
+
+### 20.5 Order of work
+1. strategy_lib/regime.py (ER, CHOP, ADX, cycle box, flips, bleed) + unit checks on synthetic candles.
+2. Logging + journal feature group (no behaviour change; regression unchanged).
+3. Settings 1-6 in nifty_direction_ce_pe.py (all off); multiday comparison table per setting and instrument.
+4. Decide defaults with the user; save per instrument where they differ (options panel, Save for <instrument>).

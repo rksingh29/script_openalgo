@@ -200,7 +200,7 @@ class Strategy:
 
         self.bars = []             # completed 5m index candles: {t, o, h, l, c}
         self.warm = []             # last WARMUP_BARS candles of earlier days (indicator warm-up only)
-        self.processed_bars = 0
+        self.last_bar_t = None   # timestamp cursor, not a list index: self.bars is rebuilt wholesale by refresh_bars()
 
         self.position = None      # {"side","symbol","qty","entry_premium","index_entry","stop","target"}
         self.lot = None
@@ -352,9 +352,11 @@ class Strategy:
 
     # ---------- bar-driven signal ----------
     def process_new_bars(self):
-        while self.processed_bars < len(self.bars):
-            self.handle_new_bar(self.processed_bars)
-            self.processed_bars += 1
+        for i, b in enumerate(self.bars):
+            if self.last_bar_t is not None and b["t"] <= self.last_bar_t:
+                continue
+            self.handle_new_bar(i)
+            self.last_bar_t = b["t"]
 
     def in_time_window(self):
         return self.at(START_TIME) <= self.now() < self.at(NO_NEW_ENTRY_AFTER)

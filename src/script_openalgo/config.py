@@ -19,6 +19,7 @@ API key (never printed, never stored in the workspace config): environment varia
 OPENALGO_API_KEY=... in <workspace>/.env.
 """
 import os
+import sys
 import tomllib
 
 DEFAULT_HOST = "http://127.0.0.1:5000"
@@ -100,6 +101,13 @@ def child_env(extra=None):
         env.setdefault(k, v)
     env[ENV_HOME] = home()
     env[ENV_HOST] = host()
+    # `python` / `script-openalgo` in a child (e.g. a Claude agent's shell) must be THIS interpreter (the venv that has
+    # script_openalgo), not whatever Python comes first on PATH, even when the venv was never activated.
+    bindir = os.path.dirname(os.path.abspath(sys.executable))
+    parts = [p for p in env.get("PATH", "").split(os.pathsep) if p and os.path.normcase(p) != os.path.normcase(bindir)]
+    env["PATH"] = os.pathsep.join([bindir] + parts)
+    if os.path.exists(os.path.join(os.path.dirname(bindir), "pyvenv.cfg")):
+        env["VIRTUAL_ENV"] = os.path.dirname(bindir)
     env.update(extra or {})
     return env
 

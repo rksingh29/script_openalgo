@@ -39,6 +39,12 @@ class FakeClient:
                                "run backtest_core.data_loader first")
         self.expiry_date = date.fromisoformat(self.manifest["expiry"])
         self.lot = int(self.manifest["lot_size"])
+        # the day's expiry, plus the NEXT expiry when its options were fetched (data_loader --next-expiry)
+        self._books = {self.expiry_date: (self.manifest, self.lot)}
+        nxt = dl.load_next_manifest(day, self.instrument)
+        if nxt and nxt.get("complete") and nxt.get("expiry"):
+            self._books[date.fromisoformat(nxt["expiry"])] = (nxt, int(nxt.get("lot_size") or self.lot))
+        self._day_book = (self.expiry_date, self.manifest, self.lot)
         self._series = {}
         self.orders = []           # dicts: id, time, cycle, symbol, action, qty, price
         self.strategy = None       # set by the runner, used only to tag orders with the cycle number
@@ -146,6 +152,7 @@ class FakeClient:
         and volume are the last completed bar's. Response fields follow OpenAlgo; `source` and `partial` say which one."""
         if str(underlying).upper() != self.cfg["index_symbol"]:
             return {"status": "error", "message": f"FakeClient holds {self.instrument} data, not {underlying}"}
+        self._use_expiry(expiry_date)
         now = self.clock.now()
         snaps = [x for x in dl.chain_snapshots(self.instrument, self.day) if x[0] <= now]
         if snaps:
@@ -203,8 +210,18 @@ class FakeClient:
         return min(have, key=lambda k: (abs(k - spot), k)) if have else strike
 
     def expiry(self, symbol, exchange, instrumenttype):
-        e = self.expiry_date
-        return {"status": "success", "data": [f"{e.day:02d}-{dl.MONTHS[e.month - 1]}-{e.year % 100:02d}"]}
+        """The expiries with cached options on this day, nearest first (the next one only if it was fetched)."""
+        return {"status": "success", "data": [f"{e.day:02d}-{dl.MONTHS[e.month - 1]}-{e.year % 100:02d}" for e in sorted(self._books)]}
+
+    def _use_expiry(self, expiry_date):
+        """Point optionsymbol / optionchain at the requested expiry ('19OCT26'); the day's own expiry if not cached."""
+        want = str(expiry_date or "").upper().replace("-", "")
+        for e, (m, lot) in self._books.items():
+            if dl.fmt_expiry(e) == want:
+                self.expiry_date, self.manifest, self.lot = e, m, lot
+                return True
+        self.expiry_date, self.manifest, self.lot = self._day_book
+        return not want
 
     def optionsymbol(self, underlying, exchange, expiry_date, offset, option_type):
         if underlying.upper() != self.cfg["index_symbol"]:
@@ -212,9 +229,24 @@ class FakeClient:
         spot = self._price(self.cfg["index_symbol"])
         if spot is None:
             return {"status": "error", "message": f"no {underlying} price yet"}
-        if offset != "ATM":
-            return {"status": "error", "message": f"offset {offset} not supported by FakeClient"}
+        if not self._use_expiry(expiry_date):
+            return {"status": "error", "message": f"expiry {expiry_date} not in the data cache for {self.day} "
+                                                  "(fetch it: data_loader --next-expiry)"}
+        off = str(offset).upper()
+        m = re.fullmatch(r"(ATM)|(OTM|ITM)(\d+)", off)
+        if not m:
+            return {"status": "error", "message": f"offset {offset} not supported by FakeClient (ATM, OTMn, ITMn)"}
         strike = self._atm(spot, option_type)
+        if m.group(2):                                  # n listed strikes away from the ATM: OTM = up for CE, down for PE
+            n = int(m.group(3))
+            up = (m.group(2) == "OTM") == (option_type == "CE")
+            have = sorted(int(k) for k in self.manifest.get("strikes", []))
+            side = [k for k in have if (k > strike if up else k < strike)]
+            side = side if up else side[::-1]
+            if len(side) < n:
+                return {"status": "error", "message": f"{off} {option_type} not in data cache (only {len(side)} strike(s) "
+                                                      f"{'above' if up else 'below'} ATM {strike}; backfill a wider strike range)"}
+            strike = side[n - 1]
         sym = dl.option_symbol(self.instrument, self.expiry_date, strike, option_type)
         if self._df(sym) is None:
             return {"status": "error", "message": f"{sym} not in data cache (strike outside fetched range)"}

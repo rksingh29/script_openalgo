@@ -162,7 +162,7 @@ class Strategy:
         self.bars = []           # completed 5m index candles: {t, o, h, l, c}
         self.ema9 = []
         self.ema21 = []
-        self.processed_bars = 0
+        self.last_bar_t = None   # timestamp cursor, not a list index: self.bars is rebuilt wholesale by refresh_bars()
 
         self.htf_bars = []       # completed 15m index candles
         self.htf_ema9 = []
@@ -313,9 +313,11 @@ class Strategy:
 
     # ---------- bar-driven state machine ----------
     def process_new_bars(self):
-        while self.processed_bars < len(self.bars):
-            self.handle_new_bar(self.processed_bars)
-            self.processed_bars += 1
+        for i, b in enumerate(self.bars):
+            if self.last_bar_t is not None and b["t"] <= self.last_bar_t:
+                continue
+            self.handle_new_bar(i)
+            self.last_bar_t = b["t"]
 
     def in_time_window(self):
         return self.at(START_TIME) <= self.now() < self.at(NO_NEW_ENTRY_AFTER)

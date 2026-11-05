@@ -4,7 +4,13 @@ Strategy Lab web app (local only).
     python -m webapp.app            # http://127.0.0.1:5055
 
 Binds to 127.0.0.1. Mutating requests need the X-Requested-With header (blocks cross-site form posts) and a
-localhost Host header. The OpenAlgo API key is read from the environment / .env by child processes only.
+known Host header. The OpenAlgo API key is read from the environment / .env by child processes only.
+
+LAN access (another device opens http://<this PC's IP>:5055): STRATEGY_LAB_BIND=0.0.0.0 (or this PC's IP) and an access
+token STRATEGY_LAB_TOKEN (environment or <workspace>/.env, at least 12 characters). Requests from this PC need no token;
+other devices open the page once with ?token=<token> (or type it into the form) and get a cookie. Without a token the app
+stays on 127.0.0.1: it has no login, and it can start auto-trade and send real orders. STRATEGY_LAB_HOSTS adds host names
+(comma separated, e.g. mypc.local); this PC's IP addresses are allowed automatically when it listens on the LAN.
 """
 import csv
 import glob
@@ -27,17 +33,56 @@ from script_openalgo.webapp import jobs  # noqa: E402
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024 ** 3                  # backups can be large; imports are verified before anything is applied
 PORT = int(os.environ.get("STRATEGY_LAB_PORT", "5055"))
+BIND = "127.0.0.1"                  # set by main(): 127.0.0.1, or the LAN address when a token is configured
+TOKEN = ""                          # LAN access token (STRATEGY_LAB_TOKEN); empty = this PC only
 ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
+LOCAL_ADDRS = {"127.0.0.1", "::1"}
+TOKEN_COOKIE = "strategy_lab_token"
 
 
 def ws():
     return db.workspaces()["active"]
 
 
+def _lan_setup():
+    """LAN access only with a token; otherwise stay on 127.0.0.1. Returns the address to bind to."""
+    global BIND, TOKEN
+    import socket
+    want = (os.environ.get("STRATEGY_LAB_BIND") or "127.0.0.1").strip()
+    tok = (os.environ.get("STRATEGY_LAB_TOKEN") or config.load_dotenv().get("STRATEGY_LAB_TOKEN") or "").strip()
+    if want in ("127.0.0.1", "localhost", ""):
+        return "127.0.0.1"
+    if len(tok) < 12:
+        print("LAN access refused: set STRATEGY_LAB_TOKEN (12+ characters, environment or <workspace>/.env) first. "
+              "Strategy Lab has no login and can place real orders. Staying on 127.0.0.1.")
+        return "127.0.0.1"
+    BIND, TOKEN = want, tok
+    names = {want} if want != "0.0.0.0" else set()
+    try:
+        names |= set(socket.gethostbyname_ex(socket.gethostname())[2]) | {socket.gethostname()}
+    except OSError:
+        pass
+    names |= {h.strip() for h in (os.environ.get("STRATEGY_LAB_HOSTS") or "").split(",") if h.strip()}
+    ALLOWED_HOSTS.update(f"{n}:{PORT}" for n in names)
+    return want
+
+
 @app.before_request
 def guard():
     if request.host not in ALLOWED_HOSTS:
         abort(403)
+    if request.remote_addr not in LOCAL_ADDRS:                  # another device on the LAN: token required
+        import hmac
+        given = request.args.get("token") or request.cookies.get(TOKEN_COOKIE) or ""
+        if not TOKEN or not hmac.compare_digest(given.encode(), TOKEN.encode()):
+            return ("<!doctype html><meta name=viewport content='width=device-width'><title>Strategy Lab</title>"
+                    "<form style='font-family:sans-serif;margin:40px'>Strategy Lab access token: "
+                    "<input name=token type=password autofocus> <button>Open</button></form>", 401)
+        if request.args.get("token"):                              # remember it, and drop it from the address bar
+            from flask import redirect
+            r = redirect(request.path)
+            r.set_cookie(TOKEN_COOKIE, TOKEN, max_age=30 * 86400, httponly=True, samesite="Strict")
+            return r
     if request.method != "GET" and request.headers.get("X-Requested-With") != "strategy-lab":
         abort(403)
 
@@ -173,16 +218,35 @@ def runs_delete_many():
     return jsonify({"deleted": n})
 
 
+def _safe_under(p, folder):
+    """Whether p resolves inside folder, without raising (os.path.commonpath raises ValueError across drives -
+    seen 2026-11-02 on log_path values left over from when the workspace was reached via a mapped H: drive)."""
+    try:
+        return os.path.commonpath([os.path.abspath(p), os.path.abspath(folder)]) == os.path.abspath(folder)
+    except ValueError:
+        return False
+
+
+def _resolve_log_file(p):
+    """The real file for a stored log/events path: itself if it is inside LOG_DIR, else the same-named file
+    actually inside LOG_DIR (handles a stale drive letter), else None."""
+    if not p:
+        return None
+    if _safe_under(p, jobs.LOG_DIR):
+        return p
+    alt = os.path.join(jobs.LOG_DIR, os.path.basename(p))
+    return alt if _safe_under(alt, jobs.LOG_DIR) else None
+
+
 def _delete_job(con, j):
     """Remove a finished job row and its log files (only files inside the workspace's log folder)."""
-    lp = j["log_path"]
+    lp = _resolve_log_file(j["log_path"])
     try:
         events = json.loads(j["meta"] or "{}").get("events")        # signal sessions keep their events next to the log
     except (ValueError, TypeError):
         events = None
-    if lp and os.path.commonpath([os.path.abspath(lp), os.path.abspath(jobs.LOG_DIR)]) == os.path.abspath(jobs.LOG_DIR):
-        ev_ok = events and os.path.commonpath([os.path.abspath(events), os.path.abspath(jobs.LOG_DIR)]) == os.path.abspath(jobs.LOG_DIR)
-        for p in (lp, lp[:-4] + ".exit" if lp.endswith(".log") else None, events if ev_ok else None):
+    if lp:
+        for p in (lp, lp[:-4] + ".exit" if lp.endswith(".log") else None, _resolve_log_file(events)):
             if p and os.path.exists(p):
                 try:
                     os.remove(p)
@@ -356,10 +420,14 @@ def parse_run_params(slug, text):
     """'NAME=value, ...' from the UI -> dict, checked against the strategy file. Raises ValueError with a message."""
     from script_openalgo.signals import parse_params
     params = parse_params(text or "")
-    known = {p["name"] for p in strategy_params(slug)}
+    known = {p["name"] for p in strategy_params(slug)} | {instruments.STRIKE_KEY, instruments.EXPIRY_KEY}
     unknown = [k for k in params if k not in known]
     if unknown:
         raise ValueError(f"{', '.join(unknown)}: not an option of {slug}")
+    if instruments.STRIKE_KEY in params:
+        params[instruments.STRIKE_KEY] = instruments.strike_offset(params[instruments.STRIKE_KEY])
+    if instruments.EXPIRY_KEY in params:
+        params[instruments.EXPIRY_KEY] = instruments.expiry_choice(params[instruments.EXPIRY_KEY])
     return params
 
 
@@ -373,10 +441,40 @@ def strategy_params_api(sid):
     inst = (request.args.get("instrument") or "").upper()
     ov = (instruments.INSTRUMENTS.get(inst) or {}).get("strategy_overrides", {}) if inst else {}
     items = strategy_params(s["slug"])
+    saved = instruments.strategy_defaults(s["slug"], inst) if inst else {}
     for p in items:
         if p["name"] in ov:
             p["instrument_value"] = ov[p["name"]]                   # e.g. BANKNIFTY sets CONFIRM_BARS=0
-    return jsonify({"items": items, "instrument": inst})
+        if p["name"] in saved:
+            p["saved_value"] = saved[p["name"]]                     # the user's saved option for this instrument
+    return jsonify({"items": items, "instrument": inst, "strike_choices": instruments.STRIKE_CHOICES,
+                    "saved_strike": saved.get(instruments.STRIKE_KEY, "ATM"), "expiry_choices": instruments.EXPIRY_CHOICES, "expiry_labels": instruments.EXPIRY_LABELS,
+                    "expiry_options": instruments.expiry_options(inst), "saved_expiry": saved.get(instruments.EXPIRY_KEY, "current"), "saved": saved})
+
+
+@app.post("/api/strategies/<int:sid>/defaults")
+def strategy_defaults_save(sid):
+    """Save options as this strategy's standard on one instrument (e.g. MAX_LOSS for RELIANCE, STRIKE_OFFSET=OTM1).
+    Body: {instrument, params: "NAME=value, ..."} (empty = remove). Used by backtests, multi-day runs, signals, the Live
+    desk and the trade manager; runs with saved options count as normal (default) runs of that instrument."""
+    b = request.json or {}
+    inst = str(b.get("instrument") or "").upper()
+    if inst not in instruments.INSTRUMENTS:
+        return err("unknown instrument")
+    con = conn()
+    s = con.execute("SELECT slug FROM strategies WHERE id=?", (sid,)).fetchone()
+    con.close()
+    if not s:
+        return err("strategy not found", 404)
+    try:
+        params = parse_run_params(s["slug"], b.get("params") or "")
+    except ValueError as e:
+        return err(str(e))
+    if params.get(instruments.STRIKE_KEY) == "ATM":
+        params.pop(instruments.STRIKE_KEY)
+    if params.get(instruments.EXPIRY_KEY) == "current":
+        params.pop(instruments.EXPIRY_KEY)
+    return jsonify({"saved": instruments.save_strategy_defaults(s["slug"], inst, params), "instrument": inst})
 
 
 @app.post("/api/signals/clear")
@@ -1031,9 +1129,15 @@ def _trader_cfg(b):
                 r = con.execute("SELECT slug FROM strategies WHERE id=?", (int(sid),)).fetchone()
                 if not r or not os.path.exists(os.path.join(db.STRATEGIES_DIR, r["slug"] + ".py")):
                     raise ValueError(f"strategy {sid} not found or its code file is missing")
+                if trader.sells_options(r["slug"]):
+                    raise ValueError(f"{r['slug']} SELLS options; the trade manager buys options only. Run it from the Signals page.")
                 slugs.append(r["slug"])
             if slugs:
                 insts[inst] = {"strategies": slugs[:MAX_GROUP], "lots": max(1, int(ic.get("lots") or 1))}
+                if ic.get("expiry"):
+                    insts[inst]["expiry"] = instruments.expiry_choice(ic["expiry"])
+                if ic.get("strike"):
+                    insts[inst]["strike"] = instruments.strike_offset(ic["strike"])
     finally:
         con.close()
     if not insts:
@@ -1042,7 +1146,7 @@ def _trader_cfg(b):
         raise ValueError(f"at most {MAX_DESK_INSTRUMENTS} instruments")
     cfg["instruments"] = insts
     for k in ("max_margin_per_trade", "max_lots", "min_score", "max_trades_per_day", "max_daily_loss", "max_consecutive_losses",
-              "max_open_positions", "hard_stop_pct"):
+              "max_open_positions", "hard_stop_pct", "profit_lock_trigger", "profit_lock_floor_pct"):
         if b.get(k) not in (None, ""):
             v = float(b[k])
             if v < 0:
@@ -1070,8 +1174,15 @@ def _trader_active(con):
     if not r:
         return None
     jids = json.loads(db.get_setting(con, f"trader_jobs_{r['id']}", "[]") or "[]")
+    # jobs of this session by their meta too: the job list is saved only after every instrument's process was launched,
+    # and a status poll in between must not close a session that is starting (2026-10-28: closed 1 s after the start,
+    # so the Trade tab lost its Stop / Flatten buttons while the processes kept trading)
+    jids += [j["id"] for j in con.execute("SELECT id, meta FROM jobs WHERE kind='trader' AND status='running'").fetchall()
+             if json.loads(j["meta"] or "{}").get("session") == r["id"] and j["id"] not in jids]
     alive = [j for j in jids if (con.execute("SELECT status FROM jobs WHERE id=?", (j,)).fetchone() or {"status": ""})["status"] == "running"]
-    if not alive:
+    from datetime import datetime as _dt
+    starting = (_dt.now() - _dt.fromisoformat(r["started"])).total_seconds() < 120 if r["started"] else False
+    if not alive and not starting:
         con.execute("UPDATE trader_sessions SET status='done', ended=? WHERE id=?", (db.now(), r["id"]))
         con.commit()
         return None
@@ -1083,6 +1194,9 @@ def trader_settings():
     from script_openalgo import trader, costs
     con = conn()
     out = {"defaults": trader.DEFAULTS, "saved": json.loads(db.get_setting(con, "trader_form", "{}") or "{}"),
+           "expiry_choices": instruments.EXPIRY_CHOICES, "expiry_labels": instruments.EXPIRY_LABELS,
+           "expiry_options": {i: instruments.expiry_options(i) for i in instruments.INSTRUMENTS},
+           "strike_choices": instruments.STRIKE_CHOICES,
            "costs": costs.settings(con), "allow_live_orders": db.get_setting(con, "allow_live_orders", "0") == "1"}
     con.close()
     return jsonify(out)
@@ -1125,7 +1239,7 @@ def trader_start():
         return err(f"OpenAlgo not reachable: {mode.get('message')}", 503)
     paper = bool(mode.get("analyze_mode"))
     if not paper and (not allow or b.get("confirm") != "LIVE"):
-        return err("OpenAlgo is in LIVE mode (real orders). Turn on 'allow live orders' on the Signals page and type LIVE to "
+        return err("OpenAlgo is in LIVE mode (real orders). Turn on 'allow live orders' (Trade tab, top right) and type LIVE to "
                    "start, or switch OpenAlgo to Analyzer (paper).", 403)
     if _market_state() not in ("open", "pre-open"):
         return err(f"market is {_market_state()}: use Simulate a day instead")
@@ -1219,7 +1333,8 @@ def trader_status():
         book = trader.Book(con, sid).summary()
         s["book"] = {"entries": book["entries"], "open": len(book["open"]), "net": book["net"], "streak": book["streak"]}
         s["trades"] = db.rows(con, "SELECT * FROM trader_trades WHERE session=? ORDER BY id", (sid,))
-        s["events"] = db.rows(con, "SELECT ts, instrument, strategy, kind, message FROM trader_events WHERE session=? ORDER BY id DESC LIMIT 300", (sid,))
+        s["events"] = db.rows(con, "SELECT ts, instrument, strategy, kind, message FROM trader_events WHERE session=? AND kind != 'log' ORDER BY id DESC LIMIT 300", (sid,))
+        s["logs"] = db.rows(con, "SELECT ts, instrument, strategy, message FROM trader_events WHERE session=? AND kind = 'log' ORDER BY id DESC LIMIT 300", (sid,))
         jids = json.loads(db.get_setting(con, f"trader_jobs_{sid}", "[]") or "[]")
         s["jobs"] = db.rows(con, f"SELECT id, label, status FROM jobs WHERE id IN ({','.join('?' * len(jids))})", jids) if jids else []
         out["session"] = s
@@ -1234,6 +1349,29 @@ def trader_review():
     r = trader.review(con, request.args.get("day") or date.today().isoformat(), request.args.get("mode") or None)
     con.close()
     return jsonify(r)
+
+
+@app.get("/api/trader/sessions/<sid>/chart")
+def trader_session_chart(sid):
+    """Price-vs-time chart for one trader session (auto or simulate): the instrument's candles for that day plus
+    each closed trade's option premium, entry/exit and what-ifs -- same engine as a backtest run's chart."""
+    con = conn()
+    s = con.execute("SELECT day, config FROM trader_sessions WHERE id=?", (sid,)).fetchone()
+    if not s:
+        con.close()
+        return err("not found", 404)
+    trades = db.rows(con, "SELECT * FROM trader_trades WHERE session=? AND exit_price IS NOT NULL ORDER BY id", (sid,))
+    con.close()
+    insts = sorted({t["instrument"] for t in trades}) or sorted(json.loads(s["config"] or "{}").get("instruments", {}).keys())
+    if not insts:
+        return err("no instrument data for this session", 404)
+    inst = request.args.get("instrument") or insts[0]
+    rows = [dict(t, gross_pnl=t["gross"]) for t in trades if t["instrument"] == inst]
+    from script_openalgo.webapp import chart
+    c = chart.build(db.ws_paths(ws())[1], inst, s["day"], rows)
+    c["instruments"] = insts
+    c["instrument"] = inst
+    return jsonify(c)
 
 
 @app.post("/api/trader/sessions/<sid>/delete")
@@ -1251,6 +1389,23 @@ def trader_session_delete(sid):
     con.commit()
     con.close()
     return jsonify({"deleted": sid})
+
+
+@app.post("/api/trader/sessions/delete-all")
+def trader_sessions_delete_all():
+    from script_openalgo import trader
+    con = conn()
+    trader.ensure(con)
+    rows = db.rows(con, "SELECT id FROM trader_sessions WHERE status != 'running'")
+    ids = [r["id"] for r in rows]
+    for sid in ids:
+        for t in ("trader_trades", "trader_events"):
+            con.execute(f"DELETE FROM {t} WHERE session=?", (sid,))
+        con.execute("DELETE FROM trader_sessions WHERE id=?", (sid,))
+    con.commit()
+    skipped = db.rows(con, "SELECT COUNT(*) c FROM trader_sessions WHERE status='running'")[0]["c"]
+    con.close()
+    return jsonify({"deleted": len(ids), "skipped_running": skipped})
 
 
 @app.post("/api/research")
@@ -1340,15 +1495,69 @@ def cancel(jid):
     return jsonify({"cancelled": jobs.cancel(ws(), jid)})
 
 
+def _full_log_text(con, j):
+    """The complete log for a job, whatever its kind: raw stdout for an ordinary job, the strategy's own log
+    lines for a signal session (job_<id>.log is always empty for these - the real output is the events
+    jsonl), or the trade manager's ledger events for a trader/tradersim session (also DB-backed, not a file)."""
+    kind = j["kind"]
+    meta = json.loads(j["meta"] or "{}") if "meta" in j.keys() else {}
+    if kind == "signal":
+        ev_path = _resolve_log_file(meta.get("events"))
+        if not ev_path or not os.path.exists(ev_path):
+            return "(no events file found for this signal session)"
+        lines = []
+        with open(ev_path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    e = json.loads(line)
+                except ValueError:
+                    continue
+                if e.get("type") == "log":
+                    lines.append(f"{e.get('t', '')} | {e.get('msg', '')}")
+        return "\n".join(lines) or "(no strategy log lines yet)"
+    if kind in ("trader", "tradersim"):
+        sid = meta.get("session")
+        if not sid:
+            return "(no session id on this job)"
+        rows = con.execute("SELECT ts, instrument, strategy, kind, message FROM trader_events WHERE session=? ORDER BY id", (sid,)).fetchall()
+        lines = [f"{r['ts']} | {r['instrument'] or '-'} | {r['strategy'] or '-'} | {r['kind']} | {r['message']}" for r in rows]
+        return "\n".join(lines) or "(no events yet for this session)"
+    lp = _resolve_log_file(j["log_path"])
+    if not lp or not os.path.exists(lp):
+        return "(no log file)"
+    return open(lp, encoding="utf-8", errors="replace").read()
+
+
 @app.get("/api/jobs/<int:jid>/log")
 def job_log(jid):
     con = conn()
-    j = con.execute("SELECT log_path FROM jobs WHERE id=?", (jid,)).fetchone()
-    con.close()
-    if not j or not j["log_path"] or not os.path.exists(j["log_path"]):
+    j = con.execute("SELECT * FROM jobs WHERE id=?", (jid,)).fetchone()
+    if not j:
+        con.close()
         return jsonify({"log": ""})
-    txt = open(j["log_path"], encoding="utf-8", errors="replace").read()
-    return jsonify({"log": txt[-6000:]})
+    txt = _full_log_text(con, j)
+    con.close()
+    CAP = 300000
+    return jsonify({"log": txt[-CAP:], "truncated": len(txt) > CAP, "length": len(txt)})
+
+
+@app.get("/api/jobs/list")
+def jobs_list_api():
+    """Every run (any kind), newest first, for the Logs tab: a run picker independent of the home page's 25-row cap."""
+    con = conn()
+    kind = request.args.get("kind") or None
+    limit = min(int(request.args.get("limit") or 150), 500)
+    q = "SELECT id,kind,strategy_id,label,status,phase,started,ended,exit_code,note,meta FROM jobs"
+    args = []
+    if kind:
+        q += " WHERE kind=?"
+        args.append(kind)
+    q += " ORDER BY id DESC LIMIT ?"
+    args.append(limit)
+    rows = db.rows(con, q, args)
+    kinds = [r["kind"] for r in db.rows(con, "SELECT DISTINCT kind FROM jobs ORDER BY kind")]
+    con.close()
+    return jsonify({"items": rows, "kinds": kinds})
 
 
 @app.post("/api/strategies/<int:sid>/archive")
@@ -1471,6 +1680,19 @@ def data_backfill():
     try:
         jid = jobs.start_backfill(ws(), inst)
     except RuntimeError as e:
+        return err(str(e), 409)
+    return jsonify({"job_id": jid})
+
+
+@app.post("/api/data/next-expiry")
+def data_next_expiry():
+    b = request.json or {}
+    inst = (b.get("instrument") or "NIFTY").upper()
+    if inst != "ALL" and inst not in instruments.INSTRUMENTS:
+        return err("unknown instrument")
+    try:
+        jid = jobs.start_next_expiry(ws(), inst, int(b.get("days") or 30))
+    except (RuntimeError, ValueError) as e:
         return err(str(e), 409)
     return jsonify({"job_id": jid})
 
@@ -1697,8 +1919,13 @@ def main():
     con.close()
     jobs.recover(ws())
     jobs.AutoRunner(ws).start()
+    bind = _lan_setup()
     print(f"Strategy Lab on http://127.0.0.1:{PORT}  (workspace: {ws()})")
-    app.run(host="127.0.0.1", port=PORT, debug=False, threaded=True)
+    if bind != "127.0.0.1":
+        lan = sorted(h for h in ALLOWED_HOSTS if not h.startswith(("127.0.0.1", "localhost")))
+        print(f"LAN access ON ({bind}): other devices open http://<one of {', '.join(lan)}>/?token=<STRATEGY_LAB_TOKEN> once. "
+              "Allow Python through Windows Firewall (private network) if the page does not load.")
+    app.run(host=bind, port=PORT, debug=False, threaded=True)
 
 
 if __name__ == "__main__":

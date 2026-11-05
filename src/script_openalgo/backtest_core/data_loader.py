@@ -362,6 +362,76 @@ def ensure_data(day, instrument="NIFTY", force=False):
                  extra={"unlisted": unlisted} if unlisted else None)
 
 
+def next_manifest_path(day, instrument="NIFTY"):
+    """Manifest of the NEXT expiry's options on `day` (EXPIRY option "next" / "auto"). Not named manifest_* so the
+    day listings (multiday, selector, Data tab) do not mistake it for a day of its own."""
+    return os.path.join(CACHE_DIR, f"nextexp_{instrument.upper()}_{day.isoformat()}.json")
+
+
+def load_next_manifest(day, instrument="NIFTY"):
+    p = next_manifest_path(day, instrument)
+    if not os.path.exists(p):
+        return None
+    with open(p) as f:
+        return json.load(f)
+
+
+def ensure_next_expiry(day, instrument="NIFTY", force=False):
+    """Fetch the options of the expiry AFTER the day's (nearest) one, same strikes rule as ensure_data. Needs the day's
+    own data first (ensure_data). Only LISTED contracts can be fetched: do it while the next expiry is still listed."""
+    cfg = instruments.get(instrument)
+    instrument = instrument.upper()
+    base = load_manifest(day, instrument)
+    if not base or not base.get("complete") or not base.get("expiry"):
+        base = ensure_data(day, instrument, force)
+        if not base.get("complete"):
+            raise SystemExit(f"[{instrument}] {day}: the day's own data is incomplete; fix it before the next expiry")
+    near = date.fromisoformat(base["expiry"])
+    later = [e for e in listed_expiries(instrument) if e > near]
+    issues, warnings, series = [], [], {}
+    if not later:
+        issues.append(f"no listed expiry after {near}")
+        return _save_next(day, instrument, None, None, [], series, issues, near)
+    expiry = later[0]
+    idx = load_series(cfg["index_symbol"], day)
+    strikes = candidate_strikes(instrument, float(idx["low"].min()), float(idx["high"].max()))
+    print(f"[{instrument}] {day}: next expiry {expiry} (day's expiry {near}) | {len(strikes)} strikes x CE/PE")
+    unlisted, cov, step = [], min_coverage(instrument), cfg["strike_step"]
+    core_lo = math.floor(float(idx["low"].min()) / step) * step
+    core_hi = math.ceil(float(idx["high"].max()) / step) * step
+    for strike in strikes:
+        target = issues if core_lo <= strike <= core_hi else warnings
+        sfx = "" if target is issues else " (outer buffer strike)"
+        for ot in ("CE", "PE"):
+            sym = option_symbol(instrument, expiry, strike, ot)
+            df, _ = _load_or_fetch(sym, sym, cfg["opt_exchange"], day, force)
+            if df.empty and sym in NOT_FOUND and instruments.is_stock(instrument):
+                unlisted.append(sym)
+                continue
+            info = series_info(df)
+            series[sym] = info
+            if info["rows"] == 0:
+                target.append(f"{sym}: no data{sfx}")
+            elif info["coverage"] < cov:
+                target.append(f"{sym}: coverage {info['coverage']:.0%} below {cov:.0%}{sfx}")
+    listed = listed_strikes(instrument, expiry, strikes, unlisted)
+    return _save_next(day, instrument, expiry, base.get("lot_size"), listed, series, issues, near, warnings)
+
+
+def _save_next(day, instrument, expiry, lot, strikes, series, issues, near, warnings=None):
+    m = {"instrument": instrument, "date": day.isoformat(), "expiry": expiry.isoformat() if expiry else None,
+         "day_expiry": near.isoformat(), "lot_size": lot, "strikes": strikes, "series": series, "issues": issues,
+         "warnings": warnings or [], "complete": not issues, "created": datetime.now().isoformat(timespec="seconds")}
+    if expiry:
+        m["days_to_expiry"] = (expiry - day).days
+    with open(next_manifest_path(day, instrument), "w") as f:
+        json.dump(m, f, indent=1)
+    print(f"[{instrument}] next-expiry manifest {day}: complete={m['complete']} ({len(series)} series, {len(issues)} issues)")
+    for i in issues[:10]:
+        print("  ISSUE:", i)
+    return m
+
+
 def listed_strikes(instrument, expiry, strikes, unlisted):
     """Strikes with at least one of CE/PE listed (a strike whose CE and PE are both unknown to OpenAlgo is dropped)."""
     gone = set(unlisted)
@@ -404,6 +474,8 @@ if __name__ == "__main__":
     ap.add_argument("--date", help="YYYY-MM-DD (default: previous trading day)")
     ap.add_argument("--force", action="store_true", help="refetch even if cached")
     ap.add_argument("--chain", action="store_true", help="save a snapshot of the CURRENT option chain (for PCR) instead of fetching candles")
+    ap.add_argument("--next-expiry", action="store_true", help="also fetch the NEXT expiry's options (EXPIRY option next / auto)")
+    ap.add_argument("--days", type=int, help="with --next-expiry: every cached day of the last N calendar days instead of one date")
     a = ap.parse_args()
     d = date.fromisoformat(a.date) if a.date else previous_trading_day()
     names = list(instruments.INSTRUMENTS) if a.instrument.upper() == "ALL" else [a.instrument]
@@ -411,5 +483,16 @@ if __name__ == "__main__":
         for n in names:
             snapshot_chain(n)
         sys.exit(0)
+    if a.next_expiry:
+        days = [d]
+        if a.days:
+            days = [d - timedelta(days=k) for k in range(a.days, -1, -1)]
+        ok = True
+        for n in names:
+            for x in days:
+                if x.weekday() >= 5 or not (load_manifest(x, n) or {}).get("complete"):
+                    continue
+                ok = ensure_next_expiry(x, n, force=a.force)["complete"] and ok
+        sys.exit(0 if ok else 2)
     ok = all([ensure_data(d, n, force=a.force)["complete"] for n in names])
     sys.exit(0 if ok else 2)

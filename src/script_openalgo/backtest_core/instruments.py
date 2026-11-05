@@ -148,37 +148,217 @@ def is_stock(name):
     return get(name).get("kind") == "stock"
 
 
+STRIKE_KEY = "STRIKE_OFFSET"      # run option for every strategy: which strike its offset="ATM" requests get
+STRIKE_CHOICES = ["ATM"] + [f"OTM{n}" for n in range(1, 6)] + [f"ITM{n}" for n in range(1, 6)]
+EXPIRY_KEY = "EXPIRY"             # run option for every strategy: which expiry its expiry() list starts with
+# current = nearest; next = next week (the expiry after the nearest); week2 / week3 = two / three after the nearest;
+# monthly = the nearest MONTHLY expiry (the last listed expiry of its month); next_month = the monthly after that;
+# auto = next on the nearest expiry's own day, else current. (Monthly-only instruments: every expiry is a monthly.)
+EXPIRY_CHOICES = ["current", "next", "week2", "week3", "monthly", "next_month", "auto"]
+EXPIRY_LABELS = {"current": "current (nearest)", "next": "next week", "week2": "week + 1 (2 after the nearest)",
+                 "week3": "week + 2 (3 after the nearest)", "monthly": "monthly (nearest monthly)",
+                 "next_month": "next month (monthly)", "auto": "auto: next week on expiry day"}
+
+
+def expiry_options(instrument=None):
+    """[(value, label)] of the expiry choices that make sense for the instrument's expiry cycle. Monthly-only instruments
+    (BANKNIFTY, stocks): every listed expiry is a monthly, so next = next month, week2 = month + 2, and monthly /
+    next_month would only repeat current / next."""
+    cycle = (INSTRUMENTS.get(str(instrument or "").upper()) or {}).get("expiry_cycle", "weekly")
+    if cycle == "monthly":
+        return [("current", "current month"), ("next", "next month"), ("week2", "month + 2"),
+                ("auto", "auto: next month on expiry day")]
+    return [(v, EXPIRY_LABELS[v]) for v in EXPIRY_CHOICES]
+
+
+def expiry_choice(value):
+    v = str(value or "current").strip().lower()
+    if v not in EXPIRY_CHOICES:
+        raise ValueError(f"expiry {value!r}: use one of {', '.join(EXPIRY_CHOICES)}")
+    return v
+
+
+def strike_offset(value):
+    """Normalise a strike choice: 'ATM', 'OTM1'..'OTM5' (ATM+n: away from the money), 'ITM1'..'ITM5'. ValueError if bad."""
+    v = str(value or "ATM").strip().upper().replace(" ", "")
+    v = {"ATM+0": "ATM"}.get(v, v)
+    if v.startswith("ATM+"):
+        v = "OTM" + v[4:]
+    elif v.startswith("ATM-"):
+        v = "ITM" + v[4:]
+    if v not in STRIKE_CHOICES:
+        raise ValueError(f"strike {value!r}: use one of {', '.join(STRIKE_CHOICES)}")
+    return v
+
+
+def defaults_file():
+    from script_openalgo import config
+    return os.path.join(config.strategy_db_dir(), "strategy_params.json")
+
+
+def load_strategy_defaults():
+    """{slug: {instrument: {NAME: value}}}: options the user saved as the standard for a strategy on an instrument
+    (e.g. a rupee MAX_LOSS sized for RELIANCE). Workspace file strategy_db/strategy_params.json (git-tracked)."""
+    p = defaults_file()
+    if not os.path.exists(p):
+        return {}
+    try:
+        with open(p, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def strategy_defaults(slug, instrument):
+    return dict((load_strategy_defaults().get(slug) or {}).get(instrument.upper()) or {})
+
+
+def save_strategy_defaults(slug, instrument, params):
+    """Replace the saved options of `slug` on `instrument` ({} removes them)."""
+    data = load_strategy_defaults()
+    per = data.setdefault(slug, {})
+    if params:
+        per[instrument.upper()] = params
+    else:
+        per.pop(instrument.upper(), None)
+    if not per:
+        data.pop(slug, None)
+    p = defaults_file()
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=1, sort_keys=True)
+    return strategy_defaults(slug, instrument)
+
+
+class StrikeClient:
+    """Wraps a strategy's client so every strategy can trade another strike / expiry without code changes:
+    optionsymbol(offset="ATM") asks for the chosen strike (OTMn / ITMn), and expiry() lists the chosen expiry first
+    (strategies take the first entry): "next" drops the nearest expiry, "auto" drops it only on its own expiry day.
+    Everything else passes through."""
+
+    def __init__(self, inner, offset, expiry="current"):
+        object.__setattr__(self, "_inner", inner)
+        object.__setattr__(self, "_offset", offset)
+        object.__setattr__(self, "_expiry", expiry)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._inner, name, value)
+
+    def optionsymbol(self, *args, **kw):
+        if str(kw.get("offset", "ATM")).upper() == "ATM":
+            kw["offset"] = self._offset
+        return self._inner.optionsymbol(*args, **kw)
+
+    def expiry(self, *args, **kw):
+        r = self._inner.expiry(*args, **kw)
+        if self._expiry == "current" or not isinstance(r, dict) or r.get("status") != "success":
+            return r
+        raw = list(r.get("data") or [])
+        if not raw:
+            return r
+        from datetime import date, datetime
+
+        def parse(x):
+            try:
+                return datetime.strptime(str(x).replace("-", "").upper(), "%d%b%y").date()
+            except ValueError:
+                return None
+        pairs = sorted(((parse(x), x) for x in raw), key=lambda p: (p[0] is None, p[0] or date.max))
+        dates = [d for d, _ in pairs]
+        today = getattr(self._inner, "day", None)            # FakeClient: the simulated day; live: today
+        cached = isinstance(today, date)
+        today = today if cached else date.today()
+        monthly = [i for i, d in enumerate(dates) if d and not any(e and e > d and (e.year, e.month) == (d.year, d.month) for e in dates)]
+        ch = self._expiry
+        if ch == "auto":
+            idx = 1 if dates[0] == today else 0
+        elif ch in ("next", "week2", "week3"):
+            idx = {"next": 1, "week2": 2, "week3": 3}[ch]
+        elif ch == "monthly":
+            idx = monthly[0] if monthly else None
+        else:                                                # next_month
+            idx = monthly[1] if len(monthly) > 1 else None
+        if idx is None or idx >= len(pairs):
+            where = " in the data cache (fetch: data_loader --next-expiry)" if cached else ""
+            return {"status": "error", "message": f"EXPIRY={ch}: that expiry is not available{where} (listed: {', '.join(raw[:6])})"}
+        return dict(r, data=[x for _, x in pairs[idx:]])
+
+
+def _install_strike(strat, offset, expiry="current"):
+    """Make strat.Strategy(client, ...) wrap its client in StrikeClient when a strike / expiry is chosen (idempotent)."""
+    cls = getattr(strat, "Strategy", None)
+    if cls is None:
+        return
+    if not hasattr(cls, "_orig_init"):
+        cls._orig_init = cls.__init__
+
+        def init(self, client, *a, **kw):
+            off, exp = getattr(strat, "_strike_offset", "ATM"), getattr(strat, "_expiry_choice", "current")
+            cls._orig_init(self, StrikeClient(client, off, exp) if (off != "ATM" or exp != "current") else client, *a, **kw)
+        cls.__init__ = init
+    strat._strike_offset = offset
+    strat._expiry_choice = expiry
+
+
 def apply_strategy_overrides(strat, instrument, user_overrides=None):
-    """Point a strategy module at `instrument` for a backtest: underlying symbol/exchange plus the instrument's resized
-    constants. The module's original values are remembered on first use and restored first, so running several instruments
-    in one process does not leak one instrument's values into the next. User PARAM_OVERRIDES win."""
+    """Point a strategy module at `instrument`: underlying symbol/exchange, the instrument's resized constants, then the
+    options the user SAVED for this strategy on this instrument (strategy_params.json), then user PARAM_OVERRIDES, then
+    the options chosen for this run (STRATEGY_PARAMS, last). STRIKE_OFFSET (any of these) picks the strike for the
+    strategy's ATM requests. The module's original values are remembered on first use and restored first, so running
+    several instruments in one process does not leak one instrument's values into the next."""
     cfg = get(instrument)
     orig = getattr(strat, "_orig_params", None)
     if orig is None:
         orig = {}
         strat._orig_params = orig
+    user_overrides = dict(user_overrides or {})
+    saved = strategy_defaults(getattr(strat, "__name__", ""), instrument)
+    run_params = env_params()
+    strike, expiry = "ATM", "current"
+    for src in (saved, user_overrides, run_params):          # later wins
+        try:
+            if STRIKE_KEY in src:
+                strike = strike_offset(src.pop(STRIKE_KEY))
+            if EXPIRY_KEY in src:
+                expiry = expiry_choice(src.pop(EXPIRY_KEY))
+        except ValueError as e:
+            raise SystemExit(str(e))
     wanted = dict(cfg.get("strategy_overrides", {}))
     wanted["UNDERLYING"] = cfg["index_symbol"]
     if hasattr(strat, "INDEX_EXCHANGE"):
         wanted["INDEX_EXCHANGE"] = cfg["index_exchange"]
     if hasattr(strat, "OPT_EXCHANGE"):
         wanted["OPT_EXCHANGE"] = cfg.get("opt_exchange", "NFO")          # BFO for SENSEX / BANKEX options
+    if hasattr(strat, "STRIKE_STEP"):
+        wanted["STRIKE_STEP"] = cfg["strike_step"]                      # strategies that walk strikes themselves
+    wanted.update({k: v for k, v in saved.items() if hasattr(strat, k)})  # the user's saved options for this instrument
     for k in list(orig):                                   # undo what an earlier instrument set
         setattr(strat, k, orig[k])
     for k, v in wanted.items():
-        if not hasattr(strat, k) or k in (user_overrides or {}):
+        if not hasattr(strat, k) or k in user_overrides:
             continue
         orig.setdefault(k, getattr(strat, k))
         setattr(strat, k, v)
-    for k, v in (user_overrides or {}).items():
+    for k, v in user_overrides.items():
+        orig.setdefault(k, getattr(strat, k, None))
         setattr(strat, k, v)
-    run_params = env_params()
     for k, v in run_params.items():                        # options chosen for this run in the web app win
         if not hasattr(strat, k):
             raise SystemExit(f"unknown strategy parameter {k} (STRATEGY_PARAMS)")
         orig.setdefault(k, getattr(strat, k))
         setattr(strat, k, v)
+    _install_strike(strat, strike, expiry)
     strat._run_params = run_params
+    strat._saved_params = {k: v for k, v in saved.items() if hasattr(strat, k)}
+    LAST_APPLIED.clear()
+    LAST_APPLIED.update(saved=strat._saved_params, strike=strike, expiry=expiry)
+
+
+LAST_APPLIED = {}          # what the last apply_strategy_overrides used (saved options, strike): stored in summary.json
 
 
 def env_params():

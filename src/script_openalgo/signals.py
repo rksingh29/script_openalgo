@@ -145,7 +145,8 @@ def parse_params(text):
 def _load_strategy(slug, instrument):
     sys.path.insert(0, config.strategies_dir())
     strat = importlib.import_module(slug)
-    unknown = [k for k in PARAMS if not hasattr(strat, k)]
+    from script_openalgo.backtest_core.instruments import STRIKE_KEY, EXPIRY_KEY
+    unknown = [k for k in PARAMS if not hasattr(strat, k) and k not in (STRIKE_KEY, EXPIRY_KEY)]
     if unknown:
         raise SystemExit(f"unknown strategy parameter(s) {unknown} for {slug}")
     from script_openalgo.backtest_core import instruments

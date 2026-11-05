@@ -28,9 +28,37 @@ def build_trades(orders, charges_per_order=0.0):
     from script_openalgo import costs
     cfg = _cost_cfg()
     open_legs = defaultdict(list)
+    open_shorts = defaultdict(list)          # option SELLING: a SELL with no open BUY opens a short, a later BUY covers it
     trades = []
     for o in orders:
         key = (o["cycle"], o["symbol"])
+        if o["action"] == "SELL" and not open_legs[key]:
+            open_shorts[key].append({"time": o["time"], "price": o["price"], "qty": o["qty"], "cost": o.get("cost", 0.0),
+                                     "exchange": o.get("exchange") or "NFO"})
+            continue
+        if o["action"] == "BUY" and open_shorts[key]:
+            qty_left = o["qty"]
+            while qty_left > 0 and open_shorts[key]:
+                sh = open_shorts[key][0]
+                take = min(qty_left, sh["qty"])
+                gross = (sh["price"] - o["price"]) * take
+                spread = sh["cost"] * take / sh["qty"] + (o.get("cost", 0.0) * take / o["qty"] if o["qty"] else 0.0)
+                charges = costs.round_trip(o["price"], sh["price"], take, sh["exchange"], cfg)
+                trades.append({"cycle": key[0], "symbol": key[1], "qty": take, "side": "short",
+                               "entry_time": sh["time"].strftime("%H:%M:%S"), "entry_price": sh["price"],
+                               "exit_time": o["time"].strftime("%H:%M:%S"), "exit_price": o["price"],
+                               "gross_pnl": round(gross, 2),
+                               "net_pnl": round(gross - 2 * charges_per_order - spread - charges, 2),
+                               "costs": charges, **({"spread_cost": round(spread, 2)} if spread else {})})
+                sh["cost"] -= sh["cost"] * take / sh["qty"]
+                sh["qty"] -= take
+                qty_left -= take
+                if sh["qty"] == 0:
+                    open_shorts[key].pop(0)
+            if qty_left > 0:                 # a BUY bigger than the short: the rest opens a long leg
+                o = dict(o, qty=qty_left, cost=o.get("cost", 0.0) * qty_left / o["qty"])
+            else:
+                continue
         if o["action"] == "BUY":
             open_legs[key].append({"entry_time": o["time"], "entry_price": o["price"],
                                    "qty": o["qty"], "remaining": o["qty"], "cost": o.get("cost", 0.0), "sells": 0,
@@ -64,7 +92,8 @@ def build_trades(orders, charges_per_order=0.0):
                                    **({"spread_cost": round(leg["cost"], 2)} if leg["cost"] else {})})
             # a leftover qty_left here (SELL bigger than any open BUY) would mean an order bug
             # upstream; nothing sensible to pair it with, so it is silently dropped like before.
-    unclosed = [(k, leg) for k, legs in open_legs.items() for leg in legs]
+    unclosed = [(k, leg) for k, legs in open_legs.items() for leg in legs] + \
+        [(k, sh) for k, shs in open_shorts.items() for sh in shs]
     return trades, unclosed
 
 
@@ -122,7 +151,12 @@ def write_results(out_dir, day, trades, summary, log_lines):
     except ValueError:
         pass
     with open(os.path.join(out_dir, "summary.json"), "w") as f:
-        json.dump({"date": day.isoformat(), **summary, **({"params": params} if params else {})}, f, indent=1)
+        from script_openalgo.backtest_core import instruments
+        used = instruments.LAST_APPLIED                    # the user's saved options for this instrument, and the strike
+        extra = {**({"saved_options": used["saved"]} if used.get("saved") else {}),
+                 **({"strike": used["strike"]} if used.get("strike", "ATM") != "ATM" else {}),
+                 **({"expiry_choice": used["expiry"]} if used.get("expiry", "current") != "current" else {})}
+        json.dump({"date": day.isoformat(), **summary, **({"params": params} if params else {}), **extra}, f, indent=1)
     with open(os.path.join(out_dir, "log.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(log_lines))
 

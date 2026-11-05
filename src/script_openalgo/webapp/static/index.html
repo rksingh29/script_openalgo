@@ -145,7 +145,7 @@ $("#seed").onclick = () => confirm("Research 10 unique strategies (one-time seed
 $("#daily").onclick = () => act(() => api("/api/research", { mode: "daily" }));
 $("#auto").onchange = (e) => act(() => api("/api/auto", { on: e.target.checked }));
 
-const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["selector", "Selector"], ["live", "Live"], ["trade", "Trade"], ["signals", "Signals"], ["instruments", "Instruments"], ["jobs", "Jobs"], ["backup", "Backup"]];
+const TABS = [["strategies", "Strategies"], ["results", "Results"], ["data", "Data"], ["selector", "Selector"], ["live", "Live"], ["trade", "Trade"], ["signals", "Signals"], ["instruments", "Instruments"], ["jobs", "Jobs"], ["logs", "Logs"], ["backup", "Backup"]];
 function renderTabs() {
   $("#tabs").replaceChildren(...TABS.map(([k, l]) => h("button", { class: st.tab === k ? "on" : "", onclick: () => { st.tab = k; refresh(); } }, l)));
 }
@@ -239,7 +239,7 @@ function chartBox(runId) {
 }
 const tmin = (t) => { const p = t.split(":"); return +p[0] * 60 + +p[1]; };
 function svgLine(pts, x, y, color) { return `<polyline fill="none" stroke="${color}" stroke-width="1.5" points="${pts.map(p => x(p[0]).toFixed(1) + "," + y(p[1]).toFixed(1)).join(" ")}"/>`; }
-function chartView(c) {
+function chartView(c, initSel, onSel) {
   const wrap = h("div", {});
   if (!c.trades.length && !c.index.length) { wrap.append(h("div", { class: "mute small" }, "No chart data.")); return wrap; }
   const W = 760, M = { l: 48, r: 10, t: 10, b: 22 };
@@ -260,14 +260,15 @@ function chartView(c) {
     const d1 = h("div", {}); d1.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="color:var(--ink)">${f.g}${body}${svgLine(pts, f.x, f.y, "#2457d6")}</svg>`; wrap.append(d1);
   }
   if (!c.trades.length) return wrap;
-  let sel = 0;
-  const tabs = h("div", { class: "row", style: "margin:8px 0" }), det = h("div", {});
+  let sel = Math.min(Math.max(initSel || 0, 0), c.trades.length - 1);
+  const tabs = h("div", { class: "row", style: "margin:8px 0;flex-wrap:wrap;gap:4px" }), det = h("div", {});
   const draw = () => {
-    tabs.replaceChildren(...c.trades.map((t, i) => h("button", { class: i === sel ? "on primary" : "", onclick: () => { sel = i; draw(); } }, `#${i + 1} ${t.entry_time.slice(0, 5)} ${t.pnl >= 0 ? "+" : ""}${Math.round(t.pnl)}`)));
+    tabs.replaceChildren(...c.trades.map((t, i) => h("button", { class: "small" + (i === sel ? " on primary" : ""), onclick: () => { sel = i; if (onSel) onSel(i); draw(); } }, `#${i + 1} ${t.entry_time.slice(0, 5)} ${t.pnl >= 0 ? "+" : ""}${Math.round(t.pnl)}`)));
     const t = c.trades[sel], H = 260, x0 = tmin(t.bars[0][0]), x1 = tmin(t.bars[t.bars.length - 1][0]) + 1;
     const stopLv = t.stops.filter(s => s.pct === 5 || s.pct === 8);
     const lo = Math.min(...t.bars.map(b => b[3]), ...stopLv.map(s => s.level)), hi = Math.max(...t.bars.map(b => b[2]));
-    const f = frame(H, x0, x1, lo * 0.995, hi * 1.005, 5), bw = Math.max(2, (W - M.l - M.r) / (x1 - x0) * 0.6);
+    const span = x1 - x0, ticks = span <= 30 ? 5 : span <= 60 ? 10 : span <= 150 ? 15 : span <= 300 ? 30 : 60;
+    const f = frame(H, x0, x1, lo * 0.995, hi * 1.005, ticks), bw = Math.max(2, (W - M.l - M.r) / (x1 - x0) * 0.6);
     let body = `<rect x="${f.x(tmin(t.entry_time)).toFixed(1)}" y="${M.t}" width="${(f.x(tmin(t.exit_time)) - f.x(tmin(t.entry_time))).toFixed(1)}" height="${H - M.t - M.b}" fill="${t.pnl >= 0 ? GREEN : RED}" opacity=".08"/>`;
     for (const b of t.bars) { const cx = f.x(tmin(b[0])), up = b[4] >= b[1], col = up ? GREEN : RED;
       body += `<line x1="${cx.toFixed(1)}" x2="${cx.toFixed(1)}" y1="${f.y(b[2]).toFixed(1)}" y2="${f.y(b[3]).toFixed(1)}" stroke="${col}"/><rect x="${(cx - bw / 2).toFixed(1)}" y="${f.y(Math.max(b[1], b[4])).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1, Math.abs(f.y(b[1]) - f.y(b[4]))).toFixed(1)}" fill="${col}"/>`; }
@@ -319,27 +320,48 @@ function resultsView() {
 }
 
 // ---------- strategy options chosen per run (module constants of the strategy) ----------
-st.opts = st.opts || {};                          // "sid|INSTRUMENT" -> [{name, value, type, comment, toggle, instrument_value}]
+st.opts = st.opts || {};                          // "sid|INSTRUMENT" -> /params response {items, saved, saved_strike, strike_choices}
 function paramsString(chosen) { return Object.entries(chosen).map(([k, v]) => `${k}=${v}`).join(", "); }
 const paramsText = (p) => p && Object.keys(p).length ? Object.entries(p).map(([k, v]) => `${k}=${v}`).join(", ") : "";
 function optionsPanel(sid, getInst, chosen) {
-  // Yes/no options and "0 = off" numbers as checkboxes; everything else under "More options". Only changed values are sent.
+  // Strike choice, yes/no options and "0 = off" numbers as checkboxes; everything else under "More options".
+  // Defaults: the user's saved options for this instrument, else the instrument's own settings, else the strategy file.
+  // Only values that differ from those defaults are sent with the run; "Save for <instrument>" makes them the standard.
   const box = h("div", { class: "small", style: "margin-top:6px" }), on = {};
+  const SK = "STRIKE_OFFSET";
+  const strikeLabel = (v) => v === "ATM" ? "ATM" : v.startsWith("OTM") ? `ATM+${v.slice(3)} (${v}, out of the money)` : `ATM-${v.slice(3)} (${v}, in the money)`;
   const draw = () => {
     if (!sid) { box.replaceChildren(); return; }
-    const inst = getInst(), key = sid + "|" + inst, items = st.opts[key];
-    if (items === undefined) {
+    const inst = getInst(), key = sid + "|" + inst, R = st.opts[key];
+    if (R === undefined) {
       st.opts[key] = null; box.replaceChildren(h("span", { class: "mute" }, "loading options…"));
-      api(`/api/strategies/${sid}/params?instrument=${encodeURIComponent(inst)}`).then(r => { st.opts[key] = r.items; draw(); }).catch(() => { st.opts[key] = []; draw(); });
+      api(`/api/strategies/${sid}/params?instrument=${encodeURIComponent(inst)}`).then(r => { st.opts[key] = r; draw(); }).catch(() => { st.opts[key] = { items: [] }; draw(); });
       return;
     }
-    if (items === null) return;
-    const dflt = (it) => it.instrument_value ?? it.value;
+    if (R === null) return;
+    const items = R.items || [], saved = R.saved || {};
+    const base = (it) => it.instrument_value ?? it.value;                 // without the user's saved option
+    const dflt = (it) => it.saved_value ?? base(it);
     const cur = (it) => (it.name in chosen ? chosen[it.name] : dflt(it));
     const setv = (it, v) => { if (v === dflt(it)) delete chosen[it.name]; else chosen[it.name] = v; draw(); };
     const num = (it, s) => { const x = it.type === "int" ? parseInt(s, 10) : parseFloat(s); return isNaN(x) ? dflt(it) : x; };
-    const tip = (it) => (it.comment || "") + (it.instrument_value != null ? ` | ${inst} default: ${it.instrument_value} (file: ${it.value})` : "");
-    const label = (it) => h("span", { title: tip(it) }, it.name, it.instrument_value != null ? h("span", { class: "mute" }, ` (${inst}: ${it.instrument_value})`) : null);
+    const tip = (it) => (it.comment || "") + (it.saved_value != null ? ` | saved for ${inst}: ${it.saved_value}` : "") +
+      (it.instrument_value != null ? ` | ${inst} setting: ${it.instrument_value}` : "") + ` | file: ${it.value}`;
+    const label = (it) => h("span", { title: tip(it) }, it.name,
+      it.saved_value != null ? h("span", { class: "pos" }, ` (saved ${inst}: ${it.saved_value})`) : it.instrument_value != null ? h("span", { class: "mute" }, ` (${inst}: ${it.instrument_value})`) : null);
+    // ---- strike ----
+    const sDef = R.saved_strike || "ATM", sCur = chosen[SK] || sDef;
+    const strike = h("label", { class: "chip", title: "Which strike the strategy trades. Every strategy asks for the ATM option; ATM+n buys n strikes out of the money (cheaper premium, smaller moves), ATM-n in the money. Running several strategies with different strikes keeps their positions apart." },
+      h("b", {}, "Strike "), h("select", { onchange: (e) => { if (e.target.value === sDef) delete chosen[SK]; else chosen[SK] = e.target.value; draw(); } },
+        (R.strike_choices || ["ATM"]).map(v => h("option", { value: v, selected: v === sCur }, strikeLabel(v)))),
+      sDef !== "ATM" ? h("span", { class: "pos" }, ` (saved ${inst}: ${sDef})`) : null);
+    // ---- expiry ----
+    const EK = "EXPIRY", eDef = R.saved_expiry || "current", eCur = chosen[EK] || eDef;
+    const eLabel = R.expiry_labels || { current: "current (nearest)", next: "next week", auto: "auto: next on expiry day" };
+    const expiry = h("label", { class: "chip", title: "Which expiry the strategy trades. current = the nearest (as before); next = the one after it (less time decay, slower premiums); auto = the next expiry only on the current one's expiry day. Backtests need the next expiry's candles: Data tab / data_loader --next-expiry." },
+      h("b", {}, "Expiry "), h("select", { onchange: (e) => { if (e.target.value === eDef) delete chosen[EK]; else chosen[EK] = e.target.value; draw(); } },
+        (R.expiry_options || (R.expiry_choices || ["current"]).map(v => [v, eLabel[v] || v])).map(([v, t]) => h("option", { value: v, selected: v === eCur }, t))),
+      eDef !== "current" ? h("span", { class: "pos" }, ` (saved ${inst}: ${eDef})`) : null);
     const main = items.filter(it => it.type === "bool" || it.toggle), more = items.filter(it => !(it.type === "bool" || it.toggle));
     const mainEls = main.map(it => {
       if (it.type === "bool") return h("label", { class: "chip", style: "cursor:pointer" }, h("input", { type: "checkbox", checked: !!cur(it), onchange: (e) => setv(it, e.target.checked) }), " ", label(it));
@@ -348,14 +370,37 @@ function optionsPanel(sid, getInst, chosen) {
           onchange: (e) => setv(it, e.target.checked ? (on[it.name] || (dflt(it) || it.value || 1)) : 0) }), " ", label(it)),
         isOn ? h("input", { type: "number", step: "any", value: v, style: "width:60px;margin-left:4px", onchange: (e) => setv(it, num(it, e.target.value)) }) : null);
     });
-    const moreEls = more.map(it => h("label", { class: "chip", title: tip(it) }, it.name, " ",
+    // risk / money values first in "More options" (they are in rupees and must fit the instrument: NIFTY 1000 is not RELIANCE 1000)
+    const risky = (it) => /LOSS|TARGET|PROFIT|RISK|STOP|TRAIL|LOTS|QTY|RS\b|RUPEE/.test(it.name);
+    const moreSorted = [...more.filter(risky), ...more.filter(it => !risky(it))];
+    const moreEls = moreSorted.map(it => h("label", { class: "chip", title: tip(it), style: risky(it) ? "outline:1px solid var(--acc)" : "" }, label(it), " ",
       h("input", { value: cur(it), style: "width:" + (it.type === "str" ? 64 : 58) + "px", onchange: (e) => setv(it, it.type === "str" ? e.target.value : num(it, e.target.value)) })));
     const changed = paramsString(chosen);
+    const saveFor = () => act(async () => {
+      const merged = { ...saved, ...chosen };
+      items.forEach(it => { if (it.name in merged && merged[it.name] === base(it)) delete merged[it.name]; });   // same as without saving
+      if (merged[SK] === "ATM") delete merged[SK];
+      if (merged.EXPIRY === "current") delete merged.EXPIRY;
+      const txt = paramsString(merged);
+      if (!confirm(txt ? `Save as the standard for this strategy on ${inst}?\n\n${txt}\n\nUsed by every backtest, multi-day run, signal session, the Live desk and the trade manager on ${inst}.`
+        : `Remove every saved option of this strategy on ${inst}?`)) return;
+      await api(`/api/strategies/${sid}/defaults`, { instrument: inst, params: txt });
+      Object.keys(chosen).forEach(k => delete chosen[k]); delete st.opts[key];
+    });
+    const clearSaved = () => act(async () => {
+      if (!confirm(`Remove the saved options of this strategy on ${inst} (${paramsString(saved)})?`)) return;
+      await api(`/api/strategies/${sid}/defaults`, { instrument: inst, params: "" }); delete st.opts[key];
+    });
+    const nSaved = Object.keys(saved).length;
     box.replaceChildren(
-      h("div", { class: "row", style: "flex-wrap:wrap;gap:4px" }, h("b", {}, "Options:"), mainEls.length ? mainEls : h("span", { class: "mute" }, "none")),
-      more.length ? h("details", {}, h("summary", { class: "mute" }, `More options (${more.length})`), h("div", { class: "row", style: "flex-wrap:wrap;gap:4px;margin-top:4px" }, moreEls)) : null,
-      h("div", { class: "mute" }, changed ? ["This run: ", h("b", {}, changed), " ", h("button", { class: "small", onclick: () => { Object.keys(chosen).forEach(k => delete chosen[k]); draw(); } }, "Reset to defaults")]
-        : "Defaults of the strategy file (and the instrument's own settings) are used. Changed options apply to this run only; such runs are labelled and kept out of the strategy's stats."));
+      h("div", { class: "row", style: "flex-wrap:wrap;gap:4px" }, h("b", {}, "Options:"), strike, expiry, mainEls),
+      more.length ? h("details", {}, h("summary", { class: "mute" }, `More options (${more.length}; rupee / risk values first, check them for ${inst})`), h("div", { class: "row", style: "flex-wrap:wrap;gap:4px;margin-top:4px" }, moreEls)) : null,
+      h("div", { class: "row", style: "flex-wrap:wrap;gap:6px;margin-top:4px" },
+        changed ? [h("span", {}, "This run: ", h("b", {}, changed)), h("button", { class: "small", onclick: () => { Object.keys(chosen).forEach(k => delete chosen[k]); draw(); } }, "Reset")]
+          : h("span", { class: "mute" }, nSaved ? `Saved ${inst} options are used: ${paramsString(saved)}.` : "Defaults of the strategy file (and the instrument's own settings) are used."),
+        changed ? h("button", { class: "small primary", title: `make these values the standard for this strategy on ${inst}`, onclick: saveFor }, `Save for ${inst}`) : null,
+        nSaved ? h("button", { class: "small", onclick: clearSaved }, `Remove saved ${inst} options`) : null),
+      h("div", { class: "mute" }, "Changed options apply to this run only (labelled, kept out of the strategy's stats) unless you press Save; saved options count as the strategy's normal settings on that instrument."));
   };
   box.redraw = draw; draw();
   return box;
@@ -675,7 +720,8 @@ function tradeView() {
         h("span", {}, "net today ", money(b.net), ` (stop at -${c.max_daily_loss ?? "–"})`),
         h("span", {}, "losses in a row ", h("b", {}, `${b.streak ?? 0} / ${c.max_consecutive_losses ?? "–"}`)),
         h("span", {}, "open ", h("b", {}, `${b.open ?? 0} / ${c.max_open_positions ?? "–"}`)),
-        (ss && ss.jobs || []).map(j => h("span", { class: "chip" }, j.label.split(" (")[0].replace("auto-trade ", ""), " ", badge(j.status, j.status === "running")))),
+        (ss && ss.jobs || []).map(j => h("span", { class: "chip" }, j.label.split(" (")[0].replace("auto-trade ", ""), " ", badge(j.status, j.status === "running"))),
+        Object.entries(c.instruments || {}).map(([i, v]) => v.expiry || v.strike ? h("span", { class: "chip" }, `${i}: ${[v.expiry && ((Object.fromEntries((T.settings.expiry_options || {})[i] || []))[v.expiry] || (T.settings.expiry_labels || {})[v.expiry] || v.expiry), v.strike].filter(Boolean).join(", ")}`) : null)),
       h("div", { class: "row", style: "gap:8px" },
         h("button", { class: "primary", disabled: !!(ss && ss.stop_flag), title: "No new entries. Open positions keep their exits (strategy exit, hard stop, square-off); the manager ends when they are closed.",
           onclick: () => confirm("Stop auto-trade? No new entries; open positions keep their exits, then the manager ends.") && act(() => api("/api/trader/stop", { how: "stop" })) }, "■ Stop auto-trade"),
@@ -703,7 +749,7 @@ function tradeView() {
       if (om && om.ok && !om.analyze_mode) {
         confirmLive = prompt("OpenAlgo is in LIVE mode: the manager will place REAL orders with real money. Type LIVE to start:") || "";
         if (confirmLive !== "LIVE") return;
-      } else if (!confirm(`Start auto-trade for today (paper, OpenAlgo Analyzer) on ${Object.keys(b.instruments).join(", ")}? Limits: ${b.max_trades_per_day} trades, daily loss ${b.max_daily_loss}, ${b.max_consecutive_losses} losses in a row, hard stop -${b.hard_stop_pct}%, square-off ${b.square_off}.`)) return;
+      } else if (!confirm(`Start auto-trade for today (paper, OpenAlgo Analyzer) on ${Object.keys(b.instruments).join(", ")}? Limits: ${b.max_trades_per_day} trades, daily loss ${b.max_daily_loss}, ${b.max_consecutive_losses} losses in a row, hard stop -${b.hard_stop_pct}%${b.profit_lock_trigger ? `, profit lock at +${b.profit_lock_trigger} (floor ${b.profit_lock_floor_pct}%)` : ""}, square-off ${b.square_off}.`)) return;
       act(async () => { T.sel = null; await api("/api/trader/start", { ...b, confirm: confirmLive }); });
     };
     const simulate = () => {
@@ -717,6 +763,12 @@ function tradeView() {
         d.instruments.map(i => h("label", { class: "chip", style: `cursor:pointer;${F.instruments[i] ? "outline:2px solid var(--acc)" : ""}` }, h("input", { type: "checkbox", checked: !!F.instruments[i], onchange: () => toggleI(i) }), " ", i))),
       insts.length ? h("table", {}, h("thead", {}, h("tr", {}, [h("th", {}, "Strategy"), ...insts.map(i => h("th", {}, i))])),
         h("tbody", {}, h("tr", {}, h("td", { class: "small" }, h("b", {}, "lots per trade")), ...insts.map(i => h("td", {}, h("input", { type: "number", min: 1, value: F.instruments[i].lots || 1, style: "width:50px", onchange: (e) => { F.instruments[i].lots = Math.max(1, +e.target.value || 1); } })))),
+          h("tr", {}, h("td", { class: "small", title: "Which expiry every strategy on this instrument trades. 'saved per strategy' = each strategy's own saved option (default: the nearest expiry). On an expiry day choose next week (or auto)." }, h("b", {}, "expiry")),
+            ...insts.map(i => h("td", {}, h("select", { onchange: (e) => { F.instruments[i].expiry = e.target.value; } },
+              [["", "saved per strategy"], ...((T.settings.expiry_options || {})[i] || (T.settings.expiry_choices || []).map(v => [v, (T.settings.expiry_labels || {})[v] || v]))].map(([v, t]) => h("option", { value: v, selected: (F.instruments[i].expiry || "") === v }, t)))))),
+          h("tr", {}, h("td", { class: "small", title: "Which strike: ATM, ATM+n (out of the money) or ATM-n (in the money). 'saved per strategy' = each strategy's own saved option (default ATM)." }, h("b", {}, "strike")),
+            ...insts.map(i => h("td", {}, h("select", { onchange: (e) => { F.instruments[i].strike = e.target.value; } },
+              [["", "saved per strategy"], ...(T.settings.strike_choices || []).map(v => [v, v === "ATM" ? "ATM" : v.startsWith("OTM") ? `ATM+${v.slice(3)} (OTM)` : `ATM-${v.slice(3)} (ITM)`])].map(([v, t]) => h("option", { value: v, selected: (F.instruments[i].strike || "") === v }, t)))))),
           strategies.map(x => h("tr", {}, h("td", { class: "small" }, x.name), ...insts.map(i => h("td", {}, h("input", { type: "checkbox", checked: F.instruments[i].strategies.includes(x.id), onchange: () => toggleS(i, x.id) }))))))) : h("div", { class: "mute small" }, "Tick an instrument to choose its strategies."),
       h("div", { class: "row small", style: "flex-wrap:wrap;gap:10px;margin-top:8px" },
         h("label", {}, "side ", h("select", { onchange: (e) => { F.sides = e.target.value; } }, [["both", "CE and PE"], ["CE", "CE only (bullish)"], ["PE", "PE only (bearish)"]].map(([v, t]) => h("option", { value: v, selected: F.sides === v }, t)))),
@@ -729,6 +781,8 @@ function tradeView() {
         num("max_consecutive_losses", "stop after losses in a row", 40),
         num("max_open_positions", "max open", 40),
         num("hard_stop_pct", "hard stop % of premium", 40, "0 = off"),
+        num("profit_lock_trigger", "profit lock trigger ₹", 70, "once an open trade's gross P&L first reaches this, lock a floor below it so it cannot fully give the gain back; 0 = off"),
+        num("profit_lock_floor_pct", "profit lock floor %", 40, "the floor, as a % of the trigger (e.g. trigger 1000, 50% -> floor 500)"),
         h("label", {}, "square-off ", h("input", { type: "time", value: F.square_off, onchange: (e) => { F.square_off = e.target.value; } }))),
       h("div", { class: "row", style: "flex-wrap:wrap;gap:8px;margin-top:8px" },
         h("button", { onclick: fromSelector }, "Use the selector's picks"),
@@ -743,7 +797,8 @@ function tradeView() {
   const ss = S.session;
   const sessPick = h("div", { class: "row small", style: "gap:6px;flex-wrap:wrap" }, h("b", {}, "Session "),
     h("select", { onchange: (e) => { T.sel = e.target.value; refresh(); } }, S.sessions.map(x => h("option", { value: x.id, selected: ss && x.id === ss.id }, `${x.day} ${x.mode} ${x.status}${x.note ? " · " + x.note : ""} (${x.id})`))),
-    ss && ss.status !== "running" ? h("button", { class: "danger small", onclick: () => confirm(`Delete session ${ss.id} and its trades from the ledger?`) && act(async () => { await api(`/api/trader/sessions/${encodeURIComponent(ss.id)}/delete`, {}); T.sel = null; }) }, "Delete session") : null);
+    ss && ss.status !== "running" ? h("button", { class: "danger small", onclick: () => confirm(`Delete session ${ss.id} and its trades from the ledger?`) && act(async () => { await api(`/api/trader/sessions/${encodeURIComponent(ss.id)}/delete`, {}); T.sel = null; }) }, "Delete session") : null,
+    S.sessions.some(x => x.status !== "running") ? h("button", { class: "danger small", onclick: () => confirm("Delete ALL finished sessions and their trades from the ledger? Running sessions are kept.") && act(async () => { const r = await api("/api/trader/sessions/delete-all", {}); T.sel = null; }) }, "Delete all finished sessions") : null);
   let ledger = h("div", { class: "card mute small" }, "No session yet: start auto-trade or simulate a day.");
   if (ss) {
     const tr = ss.trades || [];
@@ -757,8 +812,11 @@ function tradeView() {
           h("td", { class: "small" }, t.status === "open" ? h("b", { class: "warn" }, "OPEN") : `${t.exit_time} @ ${t.exit_price}`), h("td", { class: "small" }, t.exit_reason || ""),
           h("td", { title: t.score_note || "" }, t.score ?? "–"), h("td", {}, money(t.gross)), h("td", { class: "small" }, t.costs ?? ""), h("td", {}, money(t.net)))) : h("tr", {}, h("td", { class: "mute" }, "no trades")))),
       h("details", {}, h("summary", { class: "small" }, `Manager log (${(ss.events || []).length}; refused entries say why)`),
-        h("div", { class: "small", style: "max-height:300px;overflow:auto;font-family:monospace" }, (ss.events || []).filter(e => e.kind !== "log").map(e =>
-          h("div", { class: e.kind === "error" ? "neg" : e.kind === "skip" ? "mute" : e.kind === "entry" ? "pos" : "" }, `${(e.ts || "").slice(11, 19)} ${e.instrument || ""} ${e.strategy || ""} [${e.kind}] ${e.message}`)))));
+        h("div", { class: "small", style: "max-height:300px;overflow:auto;font-family:monospace" }, (ss.events || []).map(e =>
+          h("div", { class: e.kind === "error" ? "neg" : e.kind === "skip" ? "mute" : e.kind === "entry" ? "pos" : "" }, `${(e.ts || "").slice(11, 19)} ${e.instrument || ""} ${e.strategy || ""} [${e.kind}] ${e.message}`)))),
+      h("details", {}, h("summary", { class: "small" }, `Strategy log (${(ss.logs || []).length}; each strategy's own narrative, like the Signals tab)`),
+        h("div", { class: "small", style: "max-height:300px;overflow:auto;font-family:monospace" }, (ss.logs || []).length ? (ss.logs || []).map(e =>
+          h("div", {}, `${(e.ts || "").slice(11, 19)} ${e.instrument || ""} [${e.strategy || ""}] ${e.message}`)) : h("div", { class: "mute" }, "(none yet)"))));
   }
   // ---- daily review ----
   const R = T.review;
@@ -782,7 +840,13 @@ function tradeView() {
       Object.keys(C).filter(k => k !== "broker").map(k => h("label", {}, k + " ", h("input", { type: "number", step: "any", value: C[k], style: "width:80px", onchange: (e) => { C[k] = +e.target.value; } }))),
       h("button", { class: "primary small", onclick: () => act(async () => { T.settings.costs = await api("/api/trader/costs", C); T.showCosts = false; }) }, "Save"),
       h("span", { class: "mute" }, "Check against a Dhan contract note. Applies to new backtests, the journal on its next rebuild, and the manager.")) : null);
-  return h("div", {}, h("div", { class: "card row small", style: "gap:10px" }, h("b", {}, "Trade manager"), modeChip, h("span", {}, `market ${S.market}`)), control, setup, ledger, review, costs);
+  const liveSwitch = h("label", { title: "One safety switch for REAL orders: the trade manager needs it to start while OpenAlgo is in LIVE mode (Analyzer off); the Signals page's Act button uses the same switch. Not needed for paper (Analyzer on)." },
+    h("input", { type: "checkbox", checked: !!T.settings.allow_live_orders, onchange: (e) => {
+      const on = e.target.checked;
+      if (on && prompt("Allow REAL orders (real money) from the trade manager and the Signals Act button? Type LIVE:") !== "LIVE") { e.target.checked = false; return; }
+      act(async () => { const r = await api("/api/signals/live-orders", { on, confirm: on ? "LIVE" : "" }); T.settings.allow_live_orders = r.allow_live_orders; });
+    } }), " allow live orders", T.settings.allow_live_orders ? h("b", { class: "neg" }, " (ON: real orders allowed)") : h("span", { class: "mute" }, " (off: paper only)"));
+  return h("div", {}, h("div", { class: "card row small", style: "gap:10px;flex-wrap:wrap" }, h("b", {}, "Trade manager"), modeChip, h("span", {}, `market ${S.market}`), h("span", { style: "flex:1" }), liveSwitch), control, setup, ledger, review, costs);
 }
 
 // ---------- signals: run a strategy live or replay a cached day; its orders appear as signals you can act on ----------
@@ -1085,7 +1149,8 @@ function dataView() {
   const d = st.dataList;
   const f = h("div", { class: "row" }, h("select", { id: "finst" }, [...st.data.instruments, "ALL"].map(i => h("option", { value: i }, i))), h("input", { type: "date", id: "fdate", title: "empty = previous trading day" }),
     h("button", { class: "primary", onclick: () => act(() => api("/api/data/fetch", { instrument: $("#finst").value, date: $("#fdate").value })) }, "Fetch data from OpenAlgo"),
-    h("button", { title: "Fetch every day since the nearest contract was listed (one call per series, a few minutes). Run while the contract is still listed.", onclick: () => confirm("Backfill the whole listed life of the nearest contract? It makes about 60-100 API calls (a few minutes).") && act(() => api("/api/data/backfill", { instrument: $("#finst").value })) }, "Backfill all days of the nearest contract"));
+    h("button", { title: "Fetch every day since the nearest contract was listed (one call per series, a few minutes). Run while the contract is still listed.", onclick: () => confirm("Backfill the whole listed life of the nearest contract? It makes about 60-100 API calls (a few minutes).") && act(() => api("/api/data/backfill", { instrument: $("#finst").value })) }, "Backfill all days of the nearest contract"),
+    h("button", { title: "For the strategies' Expiry option next / auto: fetch the options of the expiry AFTER each cached day's own expiry (last 30 days). Only listed contracts can be fetched, so do it before that expiry passes.", onclick: () => confirm("Fetch the next expiry's options for every cached day of the last 30 days? About 20 API calls per day.") && act(() => api("/api/data/next-expiry", { instrument: $("#finst").value, days: 30 })) }, "Fetch next-expiry options"));
   if (!d) return h("div", {}, f, "Loading…");
   return h("div", {}, h("div", { class: "card" }, h("b", {}, "Fetch candles"), h("div", { class: "mute small" }, "Cache folder: " + d.cache_dir), f),
     h("div", { class: "card" }, h("b", {}, "Cached days"), h("div", { class: "banner small", style: "margin-top:8px" }, "Deleting a day removes its candles. Expired option contracts cannot be fetched again from OpenAlgo, so that day may be gone for good."),
@@ -1127,7 +1192,71 @@ function jobsView() {
     h("button", { class: "danger", title: "Delete every finished job (ok, failed, cancelled, interrupted) and its log file. Running, waiting-for-answer and held jobs are kept.", onclick: () => confirm("Delete all finished jobs and their log files?") && act(() => api("/api/jobs/clear", {})) }, "Clear finished jobs and logs"));
   return h("div", {}, usageCard(), clear, h("div", { class: "card" }, h("table", {}, h("thead", {}, h("tr", {}, ["Job", "Kind", "What", "Status", "Started", "Ended", ""].map(t => h("th", {}, t)))), h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 7, class: "mute" }, "No jobs yet."))))));
 }
-async function openLog(id) { const l = await api(`/api/jobs/${id}/log`); showModal(h("div", {}, h("div", { class: "row" }, h("h3", { style: "margin:0" }, "Job #" + id + " log"), h("span", { style: "flex:1" }), h("button", { onclick: closeModal }, "Close")), h("pre", {}, l.log || "(empty)"))); }
+async function openLog(id) { const l = await api(`/api/jobs/${id}/log`); showModal(h("div", {}, h("div", { class: "row" }, h("h3", { style: "margin:0" }, "Job #" + id + " log"), h("span", { style: "flex:1" }), h("button", { onclick: closeModal }, "Close")), l.truncated ? h("div", { class: "mute small" }, `showing the last ${l.log.length.toLocaleString()} of ${l.length.toLocaleString()} characters`) : null, h("pre", {}, l.log || "(empty)"))); }
+
+// ---------- logs: full log of any run (signal / trader / tradersim / test / news / research), not capped like the tab views ----------
+function logState() { return (st.logsTab = st.logsTab || { kind: "", items: [], kinds: [], sel: null, log: "", truncated: false, length: 0, loadedFor: null, sigView: null, session: null, chart: null, chartInst: null, chartTrade: 0 }); }
+async function loadLogs() {
+  const L = logState();
+  const r = await api("/api/jobs/list" + (L.kind ? `?kind=${encodeURIComponent(L.kind)}` : ""));
+  L.items = r.items; L.kinds = r.kinds;
+  if (L.sel && !L.items.some(j => j.id === L.sel)) L.sel = null;
+  const selJob = L.sel ? L.items.find(j => j.id === L.sel) : null;
+  // a finished job's log cannot change: fetch it once, then leave it alone so re-polling never disturbs reading/scrolling
+  if (L.sel && (L.loadedFor !== L.sel || (selJob && selJob.status === "running"))) {
+    const l = await api(`/api/jobs/${L.sel}/log`);
+    L.log = l.log; L.truncated = l.truncated; L.length = l.length;
+    if (L.loadedFor !== L.sel) { L.sigView = null; L.session = null; L.chart = null; L.chartInst = null; L.chartTrade = 0; }
+    L.loadedFor = L.sel;
+    if (selJob && selJob.kind === "signal") {
+      try { L.sigView = await api(`/api/signals/${L.sel}`); } catch (e) { L.sigView = null; }
+    } else if (selJob && (selJob.kind === "trader" || selJob.kind === "tradersim")) {
+      try { L.session = (JSON.parse(selJob.meta || "{}") || {}).session || null; } catch (e) { L.session = null; }
+    }
+  }
+  // a chart of closed trades only changes while the session is still running; otherwise fetch once per (job, instrument)
+  if (L.session && (!L.chart || (selJob && selJob.status === "running"))) {
+    try {
+      L.chart = await api(`/api/trader/sessions/${L.session}/chart` + (L.chartInst ? `?instrument=${encodeURIComponent(L.chartInst)}` : ""));
+      L.chartInst = L.chart.instrument;
+    } catch (e) { L.chart = null; }
+  }
+}
+function logsView() {
+  const L = logState();
+  const kindChip = (k, t) => h("button", { class: "small" + (L.kind === k ? " primary" : ""), onclick: () => { L.kind = k; L.sel = null; act(loadLogs); } }, t);
+  const filters = h("div", { class: "row small", style: "flex-wrap:wrap;gap:4px;margin-bottom:8px" }, kindChip("", "All"), L.kinds.map(k => kindChip(k, k)));
+  const rows = L.items.map(j => h("tr", { class: "click" + (j.id === L.sel ? " on" : ""), onclick: () => act(async () => { L.sel = j.id; await loadLogs(); }) },
+    h("td", {}, "#" + j.id), h("td", {}, j.kind), h("td", {}, j.label, j.note ? h("div", { class: "small mute" }, j.note.slice(0, 160)) : null),
+    h("td", {}, badge(j.status, j.status === "running")), h("td", { class: "small mute" }, dt(j.started)), h("td", { class: "small mute" }, dt(j.ended))));
+  const list = h("div", { class: "card" }, h("b", {}, "Runs"), filters,
+    h("table", {}, h("thead", {}, h("tr", {}, ["Job", "Kind", "What", "Status", "Started", "Ended"].map(t => h("th", {}, t)))),
+      h("tbody", {}, rows.length ? rows : h("tr", {}, h("td", { colspan: 6, class: "mute" }, "No runs yet.")))));
+  const sel = L.sel ? L.items.find(j => j.id === L.sel) : null;
+  const chartSection = () => {
+    if (!sel) return null;
+    if (sel.kind === "signal") {
+      if (!L.sigView) return null;
+      sigState();           // make sure st.sig.hide exists (the indicator show/hide legend), even if Signals was never opened
+      return h("div", { style: "margin-bottom:10px" }, h("b", {}, "Price vs time"), sigValues(L.sigView), sigChart(L.sigView));
+    }
+    if (sel.kind === "trader" || sel.kind === "tradersim") {
+      if (!L.session) return h("div", { class: "mute small", style: "margin-bottom:10px" }, "No session id on this job.");
+      if (!L.chart) return h("div", { class: "mute small", style: "margin-bottom:10px" }, "No candle-cache data for this session's instrument/day.");
+      const instChips = (L.chart.instruments || []).length > 1 ? h("div", { class: "row small", style: "gap:4px;margin-bottom:6px" },
+        L.chart.instruments.map(i => h("button", { class: "small" + (i === L.chart.instrument ? " primary" : ""), onclick: () => { L.chartInst = i; L.chart = null; L.chartTrade = 0; act(loadLogs); } }, i))) : null;
+      return h("div", { style: "margin-bottom:10px" }, h("b", {}, "Price vs time"), instChips, chartView(L.chart, L.chartTrade, (i) => { L.chartTrade = i; }));
+    }
+    return null;
+  };
+  const detail = sel ? h("div", { class: "card" },
+    h("div", { class: "row" }, h("b", {}, `#${sel.id} ${sel.kind} log`), h("span", { style: "flex:1" }),
+      h("span", { class: "mute small" }, L.truncated ? `showing the last ${L.log.length.toLocaleString()} of ${L.length.toLocaleString()} characters` : `${L.length.toLocaleString()} characters`)),
+    chartSection(),
+    h("pre", { id: "logbody", class: "small", style: "max-height:520px;overflow:auto;-webkit-user-select:text;user-select:text" }, L.log || "(empty)"))
+    : h("div", { class: "card mute small" }, "Pick a run above to see its complete log.");
+  return h("div", {}, list, detail);
+}
 
 // ---------- strategy page: view, edit, tag, copy, rename ----------
 const VIEW_TAGS = ["bullish", "bearish", "neutral", "both-sides", "hedge"];
@@ -1357,10 +1486,13 @@ function render() {
     return;
   }
   renderHeader(); renderTabs();
-  const v = { strategies: strategiesView, results: resultsView, data: dataView, instruments: instrumentsView, selector: selectorView, live: liveView, trade: tradeView, signals: signalsView, jobs: jobsView, backup: backupView }[st.tab]();
+  const v = { strategies: strategiesView, results: resultsView, data: dataView, instruments: instrumentsView, selector: selectorView, live: liveView, trade: tradeView, signals: signalsView, jobs: jobsView, logs: logsView, backup: backupView }[st.tab]();
   const focus = document.activeElement && document.activeElement.id === "q";
+  const lb = st.tab === "logs" && $("#logbody");                 // preserve scroll/read position of a log box across the 3s poll re-render
+  const lbState = lb ? { top: lb.scrollTop, atBottom: lb.scrollTop + lb.clientHeight >= lb.scrollHeight - 4 } : null;
   $("#view").replaceChildren(v);
   if (focus) { const q = $("#q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+  if (lbState) { const ne = $("#logbody"); if (ne) ne.scrollTop = lbState.atBottom ? ne.scrollHeight : lbState.top; }
 }
 async function refresh() {
   try {
@@ -1373,6 +1505,7 @@ async function refresh() {
     if (!st.page && st.tab === "data") st.dataList = await api("/api/data");
     if (!st.page && st.tab === "instruments" && !st.instBusy) st.instList = await api("/api/instruments");
     if (!st.page && st.tab === "signals") await loadSignals();
+    if (!st.page && st.tab === "logs") await loadLogs();
     if (!st.page && st.tab === "trade") await loadTrade();
     if (!st.page && st.tab === "selector" && !(st.selr && st.selr.busy)) await loadSelector();
     if (!st.page && st.tab === "live") { if (!st.selr || !st.selr.settings || Date.now() - (st.selr.at || 0) > 60000) { await loadSelector(); st.selr.at = Date.now(); } await loadLive(); }

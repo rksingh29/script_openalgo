@@ -1121,5 +1121,423 @@
    "trailing-stop",
    "both-sides"
   ]
+ },
+ "donchian_channel_breakout_scalp": {
+  "name": "Donchian Channel Breakout Scalp",
+  "aliases": [
+   "Donchian breakout",
+   "N-period high/low breakout",
+   "channel breakout scalp",
+   "20-bar high low breakout"
+  ],
+  "family": "breakout",
+  "spec": {
+   "name": "Donchian Channel Breakout Scalp",
+   "aliases": [
+    "Donchian breakout",
+    "N-period high/low breakout",
+    "channel breakout scalp",
+    "20-bar high low breakout"
+   ],
+   "family": "breakout",
+   "timeframe": "5m",
+   "indicators": [
+    "donchian"
+   ],
+   "entry_trigger": "donchian_break",
+   "exit_type": "trailing",
+   "entry_long": "On a 5m candle whose CLOSE is above the upper Donchian band (highest high of the previous DONCHIAN_PERIOD completed candles, default 20, excluding the current candle), go long (buy ATM CE). Breakout must be on the close, not just an intrabar wick through the band.",
+   "entry_short": "On a 5m candle whose CLOSE is below the lower Donchian band (lowest low of the previous DONCHIAN_PERIOD completed candles, default 20, excluding the current candle), go short (buy ATM PE). Breakout must be on the close, not just an intrabar wick.",
+   "exit": "Trail using the Donchian middle band (average of upper and lower band). Exit a long when a candle closes back below the middle band; exit a short when a candle closes back above the middle band. Hard flatten any open position at session end (intraday only; no overnight).",
+   "stop": "Initial stop for a long at the lower Donchian band at entry (for a short, the upper band at entry), as cited by the source. This is wide, so an optional tighter cap STOP_MAX_PCT (default 0.4% of index price) can override it; skip the trade if the band stop exceeds that cap.",
+   "target": "No fixed target; the middle-band trailing exit is the primary profit mechanism. Optional first partial can be taken at the opposite band.",
+   "filters": "Intraday only; flatten at session close. Avoid the first 5 minutes after open to let the opening range form. Optional confirmation filters cited by sources (off by default): RSI>60 for longs / RSI<40 for shorts, or require the breakout to exceed the band by 0.5-1.0 ATR to reduce whipsaws.",
+   "tags": [
+    "breakout",
+    "scalp",
+    "momentum",
+    "trend",
+    "both-sides",
+    "channel"
+   ],
+   "params": {
+    "donchian_period": 20,
+    "timeframe": "5m",
+    "stop_max_pct": 0.4,
+    "require_close_beyond_band": true,
+    "atr_buffer_mult": 0.0,
+    "rsi_confirm": false,
+    "rsi_long_min": 60,
+    "rsi_short_max": 40
+   },
+   "testable": "yes",
+   "testable_reason": "Donchian upper/lower/middle bands are derived purely from rolling high/low of index OHLCV; breakout on close and middle-band trailing exit need only 5m OHLCV.",
+   "popularity": 3,
+   "data_needs": "ohlcv_5m",
+   "sources": [
+    {
+     "url": "https://trendspider.com/learning-center/donchian-channel-trading-strategies/",
+     "title": "Donchian Channel Trading Strategies: Breakout, Crawl & More",
+     "type": "broker_education"
+    },
+    {
+     "url": "https://www.litefinance.org/blog/for-beginners/best-technical-indicators/donchian-channel/",
+     "title": "Donchian Channel Indicator: Formula & Trading Strategies",
+     "type": "broker_education"
+    },
+    {
+     "url": "https://www.avatrade.com/education/technical-analysis-indicators-strategies/donchian-channel-trading-strategies",
+     "title": "Donchian Channels",
+     "type": "broker_education"
+    }
+   ]
+  },
+  "signature": "04f0596e05ef324e",
+  "sources": [
+   {
+    "url": "https://trendspider.com/learning-center/donchian-channel-trading-strategies/",
+    "title": "Donchian Channel Trading Strategies: Breakout, Crawl & More",
+    "type": "broker_education"
+   },
+   {
+    "url": "https://www.litefinance.org/blog/for-beginners/best-technical-indicators/donchian-channel/",
+    "title": "Donchian Channel Indicator: Formula & Trading Strategies",
+    "type": "broker_education"
+   },
+   {
+    "url": "https://www.avatrade.com/education/technical-analysis-indicators-strategies/donchian-channel-trading-strategies",
+    "title": "Donchian Channels",
+    "type": "broker_education"
+   }
+  ],
+  "popularity": 3,
+  "data_needs": "ohlcv_5m",
+  "testable": "yes",
+  "testable_reason": "Donchian upper/lower/middle bands are derived purely from rolling high/low of index OHLCV; breakout on close and middle-band trailing exit need only 5m OHLCV.",
+  "origin": "researcher",
+  "tags": [
+   "breakout",
+   "scalp",
+   "momentum",
+   "trend",
+   "both-sides",
+   "channel"
+  ]
+ },
+ "manual1": {
+  "name": "Manual1",
+  "aliases": [
+   "OI wall option selling",
+   "sell PE at support / CE at resistance"
+  ],
+  "family": "option_selling",
+  "spec": {
+   "name": "Manual1",
+   "family": "option_selling",
+   "timeframe": "5m",
+   "source": "user's manual NIFTY trades on 2026-10-28 (sell PE at the PE-OI support, CE at the CE-OI resistance, both in the range)",
+   "entry_short": "SELL OTM1 PE when a closed 5m index candle comes within 30 pts of the largest-PE-OI strike below the index, closes above it - 20 and closes up (above its open and the previous close); OI at that strike: PE >= 1.2x CE and not unwinding > 5%.",
+   "entry_short_ce": "SELL OTM1 CE: mirror at the largest-CE-OI strike above the index with a down candle.",
+   "exit": "buy back at -20% premium (target), +35% premium or -2500 rupees (stop), a 5m close 20 pts beyond the wall (level break), or 15:15.",
+   "filters": "09:30-14:45 entries, one short per side (PE + CE together = strangle), cooldown 2 candles, 6 trades/day, daily loss 4000.",
+   "tags": [
+    "option-selling",
+    "open-interest",
+    "support-resistance",
+    "range",
+    "user"
+   ]
+  },
+  "signature": "disk-manual1",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "option-selling",
+   "open-interest",
+   "support-resistance",
+   "range",
+   "user"
+  ]
+ },
+ "manual2": {
+  "name": "Manual2",
+  "aliases": [],
+  "family": "direction",
+  "spec": {
+   "name": "Manual2",
+   "family": "direction",
+   "based_on": "nifty_direction_ce_pe",
+   "entry": "3 rising 5-min readings of the ATM CE or PE (index move breaks a tie)",
+   "exit": "book at +1000, then continue the same side / change side / new cycle from the last 2 readings; -1000 wrong entry; 15:15",
+   "filters": "single leg, no new trades 11:00-12:45, 8 trades/day, daily loss 3000",
+   "tags": [
+    "direction",
+    "option-buying",
+    "user"
+   ]
+  },
+  "signature": "disk-manual2",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "direction",
+   "option-buying",
+   "user"
+  ]
+ },
+ "all_in_one": {
+  "name": "All In One",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "All In One",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-all_in_one",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "adx_dmi_directional_crossover_scalp": {
+  "name": "Adx Dmi Directional Crossover Scalp",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Adx Dmi Directional Crossover Scalp",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-adx_dmi_directional_crossover_scalp",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "cci_100_100_momentum_scalp": {
+  "name": "Cci 100 100 Momentum Scalp",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Cci 100 100 Momentum Scalp",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-cci_100_100_momentum_scalp",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "cpr_narrow_range_breakout_scalp": {
+  "name": "Cpr Narrow Range Breakout Scalp",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Cpr Narrow Range Breakout Scalp",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-cpr_narrow_range_breakout_scalp",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "engulfing_candle_reversal_scalp": {
+  "name": "Engulfing Candle Reversal Scalp",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Engulfing Candle Reversal Scalp",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-engulfing_candle_reversal_scalp",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "ichimoku_tenkan_kijun_cross_scalp": {
+  "name": "Ichimoku Tenkan Kijun Cross Scalp",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Ichimoku Tenkan Kijun Cross Scalp",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-ichimoku_tenkan_kijun_cross_scalp",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "keltner_channel_breakout_scalp": {
+  "name": "Keltner Channel Breakout Scalp",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Keltner Channel Breakout Scalp",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-keltner_channel_breakout_scalp",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "parabolic_sar_flip_scalp_profit_lock": {
+  "name": "Parabolic Sar Flip Scalp Profit Lock",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Parabolic Sar Flip Scalp Profit Lock",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-parabolic_sar_flip_scalp_profit_lock",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "parabolic_sar_profit_lock_banknifty": {
+  "name": "Parabolic Sar Profit Lock Banknifty",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Parabolic Sar Profit Lock Banknifty",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-parabolic_sar_profit_lock_banknifty",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "parabolic_sar_profit_lock_nifty": {
+  "name": "Parabolic Sar Profit Lock Nifty",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Parabolic Sar Profit Lock Nifty",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-parabolic_sar_profit_lock_nifty",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "pin_bar_rejection_reversal_scalp": {
+  "name": "Pin Bar Rejection Reversal Scalp",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Pin Bar Rejection Reversal Scalp",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-pin_bar_rejection_reversal_scalp",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "previous_day_high_low_breakout_scalp": {
+  "name": "Previous Day High Low Breakout Scalp",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Previous Day High Low Breakout Scalp",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-previous_day_high_low_breakout_scalp",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
+ },
+ "vwap_standard_deviation_band_reversion_scalp": {
+  "name": "Vwap Standard Deviation Band Reversion Scalp",
+  "aliases": [],
+  "family": "user",
+  "spec": {
+   "name": "Vwap Standard Deviation Band Reversion Scalp",
+   "notes": "found in the strategies folder"
+  },
+  "signature": "disk-vwap_standard_deviation_band_reversion_scalp",
+  "sources": [],
+  "popularity": 1,
+  "data_needs": "ohlcv_1m",
+  "testable": "yes",
+  "testable_reason": "",
+  "origin": "user",
+  "tags": [
+   "user"
+  ]
  }
 }

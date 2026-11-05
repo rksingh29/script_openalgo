@@ -582,6 +582,22 @@ def start_backfill(ws, instrument):
                    meta={"instrument": instrument, "backfill": True})
 
 
+def start_next_expiry(ws, instrument, days=30):
+    """Fetch the NEXT expiry's options for every cached day of the last `days` days (EXPIRY option next / auto)."""
+    con = db.connect(ws)
+    if not key_present():
+        con.close()
+        raise RuntimeError("OPENALGO_API_KEY not found (environment or .env)")
+    if running(con, "fetch"):
+        con.close()
+        raise RuntimeError("a data fetch is already running")
+    con.close()
+    cmd = [sys.executable, "-m", "script_openalgo.backtest_core.data_loader", "--instrument", instrument, "--next-expiry",
+           "--days", str(int(days))]
+    return _launch(ws, "fetch", None, f"fetch next-expiry options {instrument} (cached days, last {int(days)} days)", cmd,
+                   meta={"instrument": instrument, "next_expiry": True})
+
+
 # ---------------- data fetch ----------------
 def start_fetch(ws, instrument, day):
     con = db.connect(ws)
